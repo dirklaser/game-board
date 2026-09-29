@@ -186,54 +186,80 @@ ESPN_PATHS = {"NFL": ("football", "nfl", {}),
               "NBA": ("basketball", "nba", {})}
 
 
-def espn_games(label, start_day, end_day):
-    """Games from ESPN's scoreboard between two dates (inclusive). ESPN blocks some cloud
-    servers, so a few different addresses are tried."""
+ESPN_WORKING = {}   # remembers which ESPN address worked, per league, for this run
+
+
+def espn_day(label, day):
+    """One day of ESPN scoreboard data. ESPN blocks some cloud servers, so a few
+    different addresses are tried (the one that works is remembered)."""
     sport, league, extra = ESPN_PATHS[label]
-    ds = start_day.strftime("%Y%m%d") + ("" if start_day == end_day else "-" + end_day.strftime("%Y%m%d"))
-    params = {"dates": ds, **extra}
+    params = {"dates": day.strftime("%Y%m%d"), **extra}
     attempts = [
         (f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard", True),
         (f"https://site.web.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard", True),
         (f"https://cdn.espn.com/core/{league}/scoreboard", True),
         (f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard", False),
     ]
+    if label in ESPN_WORKING:
+        attempts.insert(0, attempts[ESPN_WORKING[label]])
     last = None
-    for url, plain in attempts:
+    for i, (url, plain) in enumerate(attempts):
         try:
             p = dict(params, xhr="1") if "cdn.espn.com" in url else params
             data = get(url, plain=plain, params=p).json()
             if "content" in data:
                 data = data["content"].get("sbData", {})
-            break
+            if label not in ESPN_WORKING:
+                ESPN_WORKING[label] = i
+            return data.get("events", [])
         except Exception as e:
             last = e
-    else:
-        raise last
+    raise last
+
+
+def espn_games(label, start_day, end_day):
+    """Games from ESPN between two dates (inclusive), requested one day at a time."""
     wk = week_number(label, start_day) if MODE[label] == "weekly" else None
-    games = []
-    for ev in data.get("events", []):
-        comp = ev["competitions"][0]
-        start = to_ct(ev["date"])
-        if not (start_day <= start.date() <= end_day):
-            continue
-        side = {}
-        for c in comp.get("competitors", []):
-            t = c.get("team", {})
-            side[c.get("homeAway")] = {"full": t.get("displayName", "?"),
-                                       "nick": t.get("name") or "", "pitcher": None,
-                                       "abbr": t.get("abbreviation", ""),
-                                       "loc": t.get("location", ""),
-                                       "score": c.get("score")}
-        if "home" not in side or "away" not in side:
-            continue
-        st = ev.get("status", {}).get("type", {})
-        venue = comp.get("venue", {}) or {}
-        games.append({"start": start, "away": side["away"], "home": side["home"],
-                      "state": st.get("state", "pre"), "detail": st.get("shortDetail", ""),
-                      "neutral": bool(comp.get("neutralSite")),
-                      "city": (venue.get("address") or {}).get("city"),
-                      "week": wk, "extra": None})
+    games, seen, failures = [], set(), 0
+    d = start_day
+    while d <= end_day:
+        try:
+            events = espn_day(label, d)
+        except Exception as e:
+            failures += 1
+            print(f"  [{label} {d}] ESPN failed: {e!r}")
+            events = []
+        for ev in events:
+            try:
+                if ev.get("id") in seen:
+                    continue
+                comp = ev["competitions"][0]
+                start = to_ct(ev["date"])
+                if not (start_day <= start.date() <= end_day):
+                    continue
+                side = {}
+                for c in comp.get("competitors", []):
+                    t = c.get("team", {})
+                    side[c.get("homeAway")] = {"full": t.get("displayName", "?"),
+                                               "nick": t.get("name") or "", "pitcher": None,
+                                               "abbr": t.get("abbreviation", ""),
+                                               "loc": t.get("location", ""),
+                                               "score": c.get("score")}
+                if "home" not in side or "away" not in side:
+                    continue
+                seen.add(ev.get("id"))
+                st = ev.get("status", {}).get("type", {})
+                venue = comp.get("venue", {}) or {}
+                games.append({"start": start, "away": side["away"], "home": side["home"],
+                              "state": st.get("state", "pre"), "detail": st.get("shortDetail", ""),
+                              "neutral": bool(comp.get("neutralSite")),
+                              "city": (venue.get("address") or {}).get("city"),
+                              "week": wk, "extra": None})
+            except Exception as e:
+                print(f"  [{label} {d}] skipped one game: {e!r}")
+        d += timedelta(days=1)
+    if failures and not games:
+        raise RuntimeError(f"ESPN unavailable for {failures} day(s)")
     return games
 
 
@@ -557,8 +583,9 @@ def build():
         "games": [dict(g, dl=None) for g in current["games"]
                   if g["t"][:10] == today.isoformat()],
     }
-    views = [today_only, current, previous]
+    views = [current, today_only, previous]
     payload = {
+        "start_tab": 1,   # open on "Today"
         "updated": now.strftime("%-I:%M %p CDT, %a %-m/%-d"),
         "days": views,
         "notes": sorted(set(notes)),
@@ -567,7 +594,7 @@ def build():
     page = template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/"))
     Path("site").mkdir(exist_ok=True)
     Path("site/index.html").write_text(page, encoding="utf-8")
-    total = sum(len(v["games"]) for v in views[1:])
+    total = len(current["games"]) + len(previous["games"])
     print(f"Wrote site/index.html with {total} games at {payload['updated']}")
 
 

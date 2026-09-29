@@ -127,7 +127,7 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 
 <script>
 const BOARD = __DATA__;
-let filter = "ALL", sort = "time", dayIdx = 0;
+let filter = "ALL", sort = "time", dayIdx = BOARD.start_tab || 0;
 const showScore = x => x.state!=="pre" && x.as!=null && x.hs!=null && x.as!=="" && x.hs!=="";
 const LINE = {MLB:"Run line", NHL:"Puck line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread"};
 const openProps = new Set(), propCat = {};
@@ -217,7 +217,7 @@ function render(){
 }
 
 const daysEl = document.getElementById("days");
-daysEl.innerHTML = BOARD.days.map((d,i)=>`<button class="chip" data-d="${i}" aria-pressed="${i===0}">${esc(d.label)}</button>`).join("");
+daysEl.innerHTML = BOARD.days.map((d,i)=>`<button class="chip" data-d="${i}" aria-pressed="${i===dayIdx}">${esc(d.label)}</button>`).join("");
 daysEl.querySelectorAll("[data-d]").forEach(b=>b.addEventListener("click",()=>{
   dayIdx=+b.dataset.d;
   daysEl.querySelectorAll("[data-d]").forEach(x=>x.setAttribute("aria-pressed",x===b));
