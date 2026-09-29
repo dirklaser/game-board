@@ -355,17 +355,30 @@ def attach_props(label, games, rows):
         key = frozenset({props.canon(label, g["away"].get("abbr")),
                          props.canon(label, g["home"].get("abbr"))})
         index[key] = g
-    unmatched = set()
+    unmatched, matched = set(), []
     for r in rows:
         key = frozenset({props.canon(label, r["team"]), props.canon(label, r["opp"])})
         g = index.get(key)
         if g is None:
             unmatched.add(f"{r['team']}-{r['opp']}")
             continue
-        g.setdefault("props", {}).setdefault(r["cat"], []).append({
+        matched.append((g, r))
+    try:
+        filled, reqs = props.add_comparisons(get, [r for _, r in matched])
+        print(f"[props {label}] sportsbook comparison: {filled} of {len(matched)} props "
+              f"({reqs} game/category groups)")
+    except Exception as e:
+        print(f"[props {label}] sportsbook comparison failed: {e!r}")
+    for g, r in matched:
+        entry = {
             "p": r["player"], "t": r["team"],
             "o": [[x["line"], x["odds"], BOOK_NAMES.get(x["book"], x["book"])] for x in r["prices"]],
-        })
+        }
+        if r.get("books"):
+            bo, bu = props.best_books(r["books"])
+            entry["b"] = r["books"]
+            entry["bo"], entry["bu"] = bo, bu
+        g.setdefault("props", {}).setdefault(r["cat"], []).append(entry)
     n = sum(len(v) for g in games for v in (g.get("props") or {}).values())
     msg = f"[props {label}] attached {n} of {len(rows)}"
     if unmatched:

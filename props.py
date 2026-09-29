@@ -66,10 +66,18 @@ def parse_rows(html, category):
                 prices.append({"line": line, "odds": odds, "book": book})
         if not prices:
             continue
+        info = row.select_one(".table-list-props")
+        chassis = info.get("data-content", "") if info else ""
+        ev = re.search(r'data-event="([^"]+)"', chassis)
+        mk = re.search(r'data-market="([^"]+)"', chassis)
+        pid = re.search(r"/prop-bets/(\d+)/", a.get("href", "")) if a else None
         out.append({
             "cat": category, "player": player,
             "team": m.group(1), "opp": m.group(3), "home": m.group(2) == "vs",
             "prices": prices[:2],
+            "event": ev.group(1) if ev else None,
+            "market": mk.group(1) if mk else None,
+            "pid": int(pid.group(1)) if pid else None,
         })
     return out
 
@@ -142,3 +150,91 @@ def fetch_browser(league_paths, per_league_seconds=150):
             results[lp] = rows
         browser.close()
     return results
+
+
+# ---------------------------------------------------------------- per-sportsbook comparison
+# The "Odds Compare" drawer on scoresandodds loads from this feed.
+COMPARE_URL = "https://rga51lus77.execute-api.us-east-1.amazonaws.com/prod/market-comparison"
+COMPARE_BOOKS = ("bet365", "fanduel", "draftkings")
+
+
+def _payout(american):
+    a = float(american)
+    return 1 + (a / 100 if a > 0 else 100 / -a)
+
+
+def _book_lines(market):
+    """{book: {"v": line, "o": over, "u": under}} for our books, available lines only."""
+    out = {}
+    for book, c in (market.get("comparison") or {}).items():
+        if book not in COMPARE_BOOKS or not c.get("available", True):
+            continue
+        if c.get("over") is None and c.get("under") is None:
+            continue
+        out[book] = {"v": c.get("value"), "o": c.get("over"), "u": c.get("under")}
+    return out
+
+
+def best_books(books):
+    """Best over = lowest line, then best price. Best under = highest line, then best price."""
+    overs = [(b, x) for b, x in books.items() if x.get("o") is not None]
+    unders = [(b, x) for b, x in books.items() if x.get("u") is not None]
+    bo = min(overs, key=lambda t: ((t[1]["v"] if t[1]["v"] is not None else 0), -_payout(t[1]["o"])))[0] if overs else None
+    bu = max(unders, key=lambda t: ((t[1]["v"] if t[1]["v"] is not None else 0), _payout(t[1]["u"])))[0] if unders else None
+    return bo, bu
+
+
+def add_comparisons(get, rows, workers=8):
+    """Fill row["books"] for rows. One request per game+category; falls back to
+    per-player requests if the feed only returns the filtered player."""
+    import time as _t
+    from concurrent.futures import ThreadPoolExecutor
+
+    groups = {}
+    for r in rows:
+        if r.get("event") and r.get("market"):
+            groups.setdefault((r["event"], r["market"]), []).append(r)
+    if not groups:
+        return 0, 0
+    hdrs = {"Referer": BASE + "/", "Origin": BASE}
+
+    def call(event, market, player=None):
+        params = {"event": event, "market": market, "t": f"{_t.time():.3f}"}
+        if player:
+            params["filter"] = player
+        try:
+            return get(COMPARE_URL, extra_headers=hdrs, params=params).json().get("markets") or []
+        except Exception:
+            return None
+
+    def do_group(key):
+        event, market = key
+        members = groups[key]
+        found = call(event, market)
+        by_id = {}
+        if found:
+            for m in found:
+                pid = (m.get("player") or {}).get("id")
+                if pid is not None:
+                    by_id[pid] = m
+        missing = [r for r in members if r.get("pid") not in by_id]
+        if missing and len(by_id) <= 1:
+            for r in missing[:40]:  # feed needs one request per player
+                one = call(event, market, r["player"])
+                for m in one or []:
+                    pid = (m.get("player") or {}).get("id")
+                    if pid is not None:
+                        by_id[pid] = m
+        n = 0
+        for r in members:
+            m = by_id.get(r.get("pid"))
+            if m:
+                books = _book_lines(m)
+                if books:
+                    r["books"] = books
+                    n += 1
+        return n
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        filled = sum(ex.map(do_group, list(groups)))
+    return filled, len(groups)

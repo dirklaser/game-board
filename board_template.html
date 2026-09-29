@@ -68,6 +68,16 @@ table.pt th:first-child,table.pt td:first-child{text-align:left}
 table.pt td{padding:5px 8px;border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 table.pt td small{display:block;color:var(--muted);font-size:.72rem}
 table.pt td .tm{color:var(--muted);font-size:.78rem;margin-left:6px}
+table.pt th.bk{text-align:center;min-width:92px}
+table.pt td.bk{text-align:center;padding:4px 6px}
+.chip{display:block;border:1px solid var(--rule);border-radius:6px;padding:2px 6px;margin:3px 0;background:var(--sheet);line-height:1.2}
+.chip b{display:block;font-weight:600;font-size:.82rem}
+.chip span{font-size:.78rem;color:var(--muted)}
+.chip.best{background:#fbf0c2;border-color:#e2c65a}
+.chip.best span{color:#5b4a0c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .chip.best{background:#4a3f12;border-color:#8a7424}:root:not([data-theme="light"]) .chip.best span{color:#f1dfa0}}
+:root[data-theme="dark"] .chip.best{background:#4a3f12;border-color:#8a7424}
+:root[data-theme="dark"] .chip.best span{color:#f1dfa0}
 a.gd:hover{text-decoration:underline}
 a.gd:focus-visible{outline:2px solid var(--mlb);outline-offset:2px;border-radius:2px}
 .time small.final{color:var(--muted)}
@@ -123,11 +133,27 @@ function propsPanel(x){
   const cur = propCat[x._i] && x.props[propCat[x._i]] ? propCat[x._i] : cats[0];
   const rows = x.props[cur];
   const two = rows.some(r=>r.o.length>1);
+  const byBook = rows.some(r=>r.b);
   const cell = o => o ? `${esc([o[0],o[1]].filter(Boolean).join(" "))}<small>${esc(o[2]||"")}</small>` : "—";
   return `<div class="pcats">${cats.map(c=>`<button data-pc="${esc(c)}" data-g="${x._i}" aria-pressed="${c===cur}">${esc(c)} (${x.props[c].length})</button>`).join("")}</div>
-    <div class="ptable-wrap"><table class="pt"><thead><tr><th>Player</th>${two?"<th>Over</th><th>Under</th>":"<th>Best odds</th>"}</tr></thead><tbody>
+    <div class="ptable-wrap">${byBook ? bookTable(rows) : `<table class="pt"><thead><tr><th>Player</th>${two?"<th>Over</th><th>Under</th>":"<th>Best odds</th>"}</tr></thead><tbody>
     ${rows.map(r=>`<tr><td>${esc(r.p)}<span class="tm">${esc(r.t)}</span></td>${two?`<td>${cell(r.o[0])}</td><td>${cell(r.o[1])}</td>`:`<td>${cell(r.o[0])}</td>`}</tr>`).join("")}
-    </tbody></table></div>`;
+    </tbody></table>`}</div>`;
+}
+const BOOKS = [["bet365","bet365"],["fanduel","FanDuel"],["draftkings","DraftKings"]];
+const fmtOdds = n => n==null ? "" : (n===100||n===-100) ? "even" : (n>0?"+"+n:String(n));
+const fmtLine = (side,v) => v==null ? (side==="o"?"Yes":"No") : side+v;
+function bookTable(rows){
+  return `<table class="pt"><thead><tr><th>Player</th>${BOOKS.map(([,n])=>`<th class="bk">${n}</th>`).join("")}</tr></thead><tbody>
+  ${rows.map(r=>`<tr><td>${esc(r.p)}<span class="tm">${esc(r.t)}</span></td>${BOOKS.map(([k])=>{
+      const x = (r.b||{})[k];
+      if(!x) return `<td class="bk">—</td>`;
+      const chips = [];
+      if(x.o!=null) chips.push(`<span class="chip${r.bo===k?" best":""}"><b>${esc(fmtLine("o",x.v))}</b><span>${esc(fmtOdds(x.o))}</span></span>`);
+      if(x.u!=null) chips.push(`<span class="chip${r.bu===k?" best":""}"><b>${esc(fmtLine("u",x.v))}</b><span>${esc(fmtOdds(x.u))}</span></span>`);
+      return `<td class="bk">${chips.join("")}</td>`;
+    }).join("")}</tr>`).join("")}
+  </tbody></table>`;
 }
 const findGame = id => { const [di,gi]=id.split("-").map(Number); return BOARD.days[di].games[gi]; };
 document.addEventListener("click", e=>{
