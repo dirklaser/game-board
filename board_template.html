@@ -52,6 +52,9 @@ button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
 .team .p{font-family:Barlow,sans-serif;font-weight:400;font-size:.88rem;color:var(--muted);margin-left:6px}
 .note{grid-column:3;font-size:.82rem;color:var(--muted)}
 .game.past{opacity:.55}
+a.gd{color:var(--mlb);font-weight:600;text-decoration:none}
+a.gd:hover{text-decoration:underline}
+a.gd:focus-visible{outline:2px solid var(--mlb);outline-offset:2px;border-radius:2px}
 .time small.final{color:var(--muted)}
 #days{margin-bottom:0}
 .empty{padding:28px 18px;color:var(--muted)}
@@ -125,7 +128,7 @@ function render(){
           <div class="team">@ ${esc(x.h)}${x.hp?`<span class="p">${esc(x.hp)}</span>`:""}</div>
           ${odds(x.ho)}
         </div>
-        ${x.note?`<div class="note">${esc(x.note)}</div>`:""}
+        <div class="note">${x.note?esc(x.note)+" · ":""}<a class="gd" href="${esc(x.url)}" target="_blank" rel="noopener">Game details</a></div>
       </div>`;
     }).join("");
   }

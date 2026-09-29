@@ -225,6 +225,24 @@ def clean_odds(text):
     return t or None
 
 
+def matchup_url(tr, sao_path):
+    """Find the game's Matchup link near its odds table (climbs a few levels, stops if it
+    reaches a container holding more than one game)."""
+    pat = re.compile(rf"^(?:https://www\.scoresandodds\.com)?/{sao_path}/[a-z0-9-]+-vs-[a-z0-9-]+/?$")
+    node = tr.find_parent("table")
+    for _ in range(5):
+        if node is None:
+            return None
+        links = {a["href"] for a in node.find_all("a", href=pat)}
+        if len(links) == 1:
+            href = links.pop()
+            return href if href.startswith("http") else "https://www.scoresandodds.com" + href
+        if len(links) > 1:
+            return None
+        node = node.parent
+    return None
+
+
 def sao_pairs(sao_path, day):
     """Return [(away_row, home_row), ...] in page order. Each row: {rot, team, pitcher}."""
     r = get(f"https://www.scoresandodds.com/{sao_path}", params={"date": day.isoformat()})
@@ -260,6 +278,7 @@ def sao_pairs(sao_path, day):
             "team": team_re.search(a["href"]).group(1),
             "pitcher": re.sub(r"\s+", " ", pm.group(1)).strip() if pm else None,
             "odds": odds,
+            "url": matchup_url(tr, sao_path),
         })
     return [(rows[i], rows[i + 1]) for i in range(0, len(rows) - 1, 2)]
 
@@ -280,6 +299,7 @@ def attach_rots(games, pairs):
                 used.add(i)
                 g["away_rot"], g["home_rot"] = a["rot"], h["rot"]
                 g["away_odds"], g["home_odds"] = a.get("odds") or {}, h.get("odds") or {}
+                g["url"] = a.get("url") or h.get("url")
                 if a["pitcher"]:
                     g["away"]["pitcher"] = a["pitcher"]
                 if h["pitcher"]:
@@ -326,6 +346,7 @@ def build():
                     "time": g["start"].strftime("%-I:%M %p"),
                     "ar": g.get("away_rot"), "hr": g.get("home_rot"),
                     "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
+                    "url": g.get("url") or f"https://www.scoresandodds.com/{sao_path}?date={day.isoformat()}",
                     "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
                     "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
                     "state": g["state"], "detail": g["detail"],
