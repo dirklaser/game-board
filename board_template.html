@@ -44,7 +44,9 @@ button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
 .time small{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--live);margin-top:3px}
 .lg{font-weight:600;font-size:.78rem;padding:2px 0;text-align:center;border-radius:4px;color:var(--sheet);margin-top:3px}
 .lg.MLB{background:var(--mlb)} .lg.NHL{background:var(--nhl)} .lg.NFL{background:var(--nfl)}
-.teams{display:grid;grid-template-columns:44px 1fr;gap:2px 10px}
+.teams{display:grid;grid-template-columns:44px minmax(0,1fr) repeat(3,82px);gap:2px 10px;align-items:baseline}
+.oh{font-size:.7rem;font-weight:600;color:var(--muted);text-align:right}
+.odd{font-variant-numeric:tabular-nums;text-align:right;font-size:.95rem;white-space:nowrap}
 .rot{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:500;text-align:right}
 .team{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.2rem;line-height:1.25}
 .team .p{font-family:Barlow,sans-serif;font-weight:400;font-size:.88rem;color:var(--muted);margin-left:6px}
@@ -60,6 +62,8 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
   .teams{grid-column:2;grid-row:1 / span 2}
   .note{grid-column:2}
   .team{font-size:1.08rem}
+  .teams{grid-template-columns:34px minmax(0,1fr) repeat(3,58px);gap:2px 6px}
+  .odd{font-size:.8rem}
   .team .p{display:block;margin-left:0}
 }
 </style>
@@ -90,6 +94,8 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 <script>
 const BOARD = __DATA__;
 let filter = "ALL", sort = "time", dayIdx = 0;
+const LINE = {MLB:"Run line", NHL:"Puck line", NFL:"Spread"};
+const odds = o => ["ml","tot","line"].map(k=>`<div class="odd">${esc((o||{})[k]||"—")}</div>`).join("");
 const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function render(){
@@ -110,10 +116,14 @@ function render(){
         <div class="time">${esc(x.time)}${status}</div>
         <div class="lg ${x.lg}">${x.lg}</div>
         <div class="teams">
+          <div></div><div></div>
+          <div class="oh">Money</div><div class="oh">Total</div><div class="oh">${LINE[x.lg]||"Line"}</div>
           <div class="rot">${x.ar ?? "—"}</div>
           <div class="team">${esc(x.a)}${x.ap?`<span class="p">${esc(x.ap)}</span>`:""}</div>
+          ${odds(x.ao)}
           <div class="rot">${x.hr ?? "—"}</div>
           <div class="team">@ ${esc(x.h)}${x.hp?`<span class="p">${esc(x.hp)}</span>`:""}</div>
+          ${odds(x.ho)}
         </div>
         ${x.note?`<div class="note">${esc(x.note)}</div>`:""}
       </div>`;
@@ -121,7 +131,7 @@ function render(){
   }
   document.getElementById("foot").innerHTML =
     BOARD.notes.map(n=>`<p>${esc(n)}</p>`).join("") +
-    `<p>Updated ${esc(BOARD.updated)}. Refreshes automatically. ROT numbers from scoresandodds.com.</p>`;
+    `<p>Updated ${esc(BOARD.updated)}. Refreshes automatically. ROT numbers and odds from scoresandodds.com.</p>`;
 }
 
 const daysEl = document.getElementById("days");

@@ -195,6 +195,36 @@ SCHEDULES = {"MLB": mlb_games, "NFL": nfl_games, "NHL": nhl_games}
 PITCHER_RE = re.compile(r"([A-Z][^()\d]*?\s*\([LR]\))")
 
 
+ODDS_KEYS = ("ml", "tot", "line")
+
+
+def header_map(tr):
+    """Map column index -> 'ml' / 'tot' / 'line' using the table's header row."""
+    table = tr.find_parent("table")
+    if table is None:
+        return {}
+    thead = table.find("thead")
+    hrow = thead.find("tr") if thead else table.find("tr")
+    if hrow is None or hrow is tr:
+        return {}
+    m = {}
+    for i, c in enumerate(hrow.find_all(["th", "td"], recursive=False)):
+        t = norm(c.get_text(" ", strip=True))
+        if "moneyline" in t:
+            m[i] = "ml"
+        elif t.startswith("total"):
+            m[i] = "tot"
+        elif any(k in t for k in ("spread", "runline", "run line", "puckline", "puck line")):
+            m[i] = "line"
+    return m
+
+
+def clean_odds(text):
+    t = re.sub(r"\s+", " ", text or "").strip()
+    t = re.sub(r"\s*\+$", "", t).strip()      # the site's trailing "+" bet button
+    return t or None
+
+
 def sao_pairs(sao_path, day):
     """Return [(away_row, home_row), ...] in page order. Each row: {rot, team, pitcher}."""
     r = get(f"https://www.scoresandodds.com/{sao_path}", params={"date": day.isoformat()})
@@ -218,10 +248,18 @@ def sao_pairs(sao_path, day):
         seen.add(rot)
         rest = cell_text.replace(a.get_text(" ", strip=True), " ", 1)[m.end():]
         pm = PITCHER_RE.search(rest)
+        odds = {}
+        cells = tr.find_all(["td", "th"], recursive=False)
+        for i, key in header_map(tr).items():
+            if i < len(cells):
+                v = clean_odds(cells[i].get_text(" ", strip=True))
+                if v:
+                    odds[key] = v
         rows.append({
             "rot": rot,
             "team": team_re.search(a["href"]).group(1),
             "pitcher": re.sub(r"\s+", " ", pm.group(1)).strip() if pm else None,
+            "odds": odds,
         })
     return [(rows[i], rows[i + 1]) for i in range(0, len(rows) - 1, 2)]
 
@@ -241,6 +279,7 @@ def attach_rots(games, pairs):
             if team_matches(a["team"], g["away"]) and team_matches(h["team"], g["home"]):
                 used.add(i)
                 g["away_rot"], g["home_rot"] = a["rot"], h["rot"]
+                g["away_odds"], g["home_odds"] = a.get("odds") or {}, h.get("odds") or {}
                 if a["pitcher"]:
                     g["away"]["pitcher"] = a["pitcher"]
                 if h["pitcher"]:
@@ -272,7 +311,9 @@ def build():
             try:
                 pairs = sao_pairs(sao_path, day)
                 matched = attach_rots(games, pairs)
-                print(f"[{day} {label}] {len(games)} games, {len(pairs)} ROT pairs, {matched} matched")
+                with_odds = sum(1 for g in games if g.get("away_odds") or g.get("home_odds"))
+                print(f"[{day} {label}] {len(games)} games, {len(pairs)} ROT pairs, "
+                      f"{matched} matched, {with_odds} with odds")
                 if matched < len(games):
                     notes.append(f"Some {label} ROT numbers for {day:%-m/%-d} aren't posted yet.")
             except Exception as e:
@@ -284,6 +325,7 @@ def build():
                     "t": g["start"].isoformat(),
                     "time": g["start"].strftime("%-I:%M %p"),
                     "ar": g.get("away_rot"), "hr": g.get("home_rot"),
+                    "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
                     "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
                     "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
                     "state": g["state"], "detail": g["detail"],
