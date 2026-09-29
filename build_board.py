@@ -195,7 +195,7 @@ SCHEDULES = {"MLB": mlb_games, "NFL": nfl_games, "NHL": nhl_games}
 PITCHER_RE = re.compile(r"([A-Z][^()\d]*?\s*\([LR]\))")
 
 
-ODDS_KEYS = ("ml", "tot", "line")
+ODDS_KEYS = ("open", "ml", "tot", "line")
 
 
 def header_map(tr):
@@ -210,7 +210,9 @@ def header_map(tr):
     m = {}
     for i, c in enumerate(hrow.find_all(["th", "td"], recursive=False)):
         t = norm(c.get_text(" ", strip=True))
-        if "moneyline" in t:
+        if t == "open":
+            m[i] = "open"
+        elif "moneyline" in t:
             m[i] = "ml"
         elif t.startswith("total"):
             m[i] = "tot"
@@ -346,7 +348,8 @@ def build():
                     "time": g["start"].strftime("%-I:%M %p"),
                     "ar": g.get("away_rot"), "hr": g.get("home_rot"),
                     "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
-                    "url": g.get("url") or f"https://www.scoresandodds.com/{sao_path}?date={day.isoformat()}",
+                    "url": g.get("url"),
+                    "day_url": f"https://www.scoresandodds.com/{sao_path}?date={day.isoformat()}",
                     "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
                     "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
                     "state": g["state"], "detail": g["detail"],
