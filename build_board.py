@@ -2,7 +2,11 @@
 """
 Game Board builder.
 
-Builds site/index.html with today's and tomorrow's MLB, NFL and NHL games:
+Builds site/index.html with two views:
+  - "Today":                 every league's games for today only
+  - "Today / This week":     today's MLB, NBA, NHL games + this week's NFL (Tue-Mon) and NCAAF (Mon-Sun)
+  - "Yesterday / Last week": yesterday's daily games + last week's NFL and NCAAF
+Data:
   - start times, teams, pitchers, neutral sites and live status from the MLB and NHL
     official schedule feeds (NFL from ESPN's scoreboard feed)
   - ROT numbers (and MLB pitcher handedness) from scoresandodds.com
@@ -15,7 +19,7 @@ import unicodedata
 import json
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -25,10 +29,22 @@ from bs4 import BeautifulSoup
 import props
 
 TZ = ZoneInfo("America/Chicago")
-DAYS_AHEAD = 1  # 0 = today only, 1 = today + tomorrow
 
-# (label, scoresandodds path)
-LEAGUES = [("MLB", "mlb"), ("NFL", "nfl"), ("NHL", "nhl")]
+# (label, scoresandodds path, "daily" or "weekly")
+LEAGUE_INFO = [
+    ("MLB", "mlb", "daily"),
+    ("NBA", "nba", "daily"),
+    ("NHL", "nhl", "daily"),
+    ("NFL", "nfl", "weekly"),
+    ("NCAAF", "ncaaf", "weekly"),
+]
+LEAGUES = [(label, path) for label, path, _ in LEAGUE_INFO]
+MODE = {label: mode for label, _, mode in LEAGUE_INFO}
+
+# Season anchors (update each season): first day of NFL Week 1 (a Tuesday) and of
+# NCAAF Week 0 (a Monday).
+NFL_WEEK1_START = date(2026, 9, 8)
+NCAAF_WEEK0_START = date(2026, 8, 24)
 
 # Display-name overrides
 NAME_OVERRIDES = {
@@ -95,6 +111,8 @@ def mlb_games(day):
                     "nick": team.get("teamName") or team.get("clubName") or "",
                     "pitcher": (t.get("probablePitcher") or {}).get("fullName"),
                     "abbr": team.get("abbreviation", ""),
+                    "loc": team.get("locationName", ""),
+                    "score": t.get("score"),
                 }
             st = g.get("status", {})
             abstract = st.get("abstractGameState", "Preview")
@@ -129,7 +147,8 @@ def nhl_games(day):
                 nick = (t.get("commonName") or {}).get("default", "")
                 full = (t.get("name") or {}).get("default") or f"{place} {nick}".strip()
                 full = unicodedata.normalize("NFKD", full).encode("ascii", "ignore").decode()
-                side[k] = {"full": full, "nick": nick, "pitcher": None, "abbr": t.get("abbrev", "")}
+                side[k] = {"full": full, "nick": nick, "pitcher": None, "abbr": t.get("abbrev", ""),
+                           "loc": place, "score": t.get("score")}
             gs = g.get("gameState", "FUT")
             state = "post" if gs in ("FINAL", "OFF") else "in" if gs in ("LIVE", "CRIT") else "pre"
             detail = "Final" if state == "post" else "Live" if state == "in" else ""
@@ -142,25 +161,48 @@ def nhl_games(day):
     return games
 
 
-def nfl_week(day):
-    # 2026 season: Week 1 runs Tue 9/8 - Mon 9/14
-    from datetime import date
-    n = (day - date(2026, 9, 8)).days // 7 + 1
-    return n if 1 <= n <= 18 else None
+def nfl_week_range(d):
+    """NFL weeks run Tuesday-Monday."""
+    start = d - timedelta(days=(d.weekday() - 1) % 7)
+    return start, start + timedelta(days=6)
 
 
-def nfl_games(day):
-    ds = day.strftime("%Y%m%d")
+def ncaaf_week_range(d):
+    """College football weeks run Monday-Sunday."""
+    start = d - timedelta(days=d.weekday())
+    return start, start + timedelta(days=6)
+
+
+def week_number(label, start):
+    if label == "NFL":
+        n = (start - NFL_WEEK1_START).days // 7 + 1
+        return n if 1 <= n <= 22 else None
+    n = (start - NCAAF_WEEK0_START).days // 7
+    return n if 0 <= n <= 20 else None
+
+
+ESPN_PATHS = {"NFL": ("football", "nfl", {}),
+              "NCAAF": ("football", "college-football", {"groups": "80", "limit": "500"}),
+              "NBA": ("basketball", "nba", {})}
+
+
+def espn_games(label, start_day, end_day):
+    """Games from ESPN's scoreboard between two dates (inclusive). ESPN blocks some cloud
+    servers, so a few different addresses are tried."""
+    sport, league, extra = ESPN_PATHS[label]
+    ds = start_day.strftime("%Y%m%d") + ("" if start_day == end_day else "-" + end_day.strftime("%Y%m%d"))
+    params = {"dates": ds, **extra}
     attempts = [
-        (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={ds}", True),
-        (f"https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={ds}", True),
-        (f"https://cdn.espn.com/core/nfl/scoreboard?xhr=1&dates={ds}", True),
-        (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={ds}", False),
+        (f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard", True),
+        (f"https://site.web.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard", True),
+        (f"https://cdn.espn.com/core/{league}/scoreboard", True),
+        (f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard", False),
     ]
     last = None
     for url, plain in attempts:
         try:
-            data = get(url, plain=plain).json()
+            p = dict(params, xhr="1") if "cdn.espn.com" in url else params
+            data = get(url, plain=plain, params=p).json()
             if "content" in data:
                 data = data["content"].get("sbData", {})
             break
@@ -168,18 +210,21 @@ def nfl_games(day):
             last = e
     else:
         raise last
+    wk = week_number(label, start_day) if MODE[label] == "weekly" else None
     games = []
     for ev in data.get("events", []):
         comp = ev["competitions"][0]
         start = to_ct(ev["date"])
-        if start.date() != day:
+        if not (start_day <= start.date() <= end_day):
             continue
         side = {}
         for c in comp.get("competitors", []):
             t = c.get("team", {})
             side[c.get("homeAway")] = {"full": t.get("displayName", "?"),
                                        "nick": t.get("name") or "", "pitcher": None,
-                                       "abbr": t.get("abbreviation", "")}
+                                       "abbr": t.get("abbreviation", ""),
+                                       "loc": t.get("location", ""),
+                                       "score": c.get("score")}
         if "home" not in side or "away" not in side:
             continue
         st = ev.get("status", {}).get("type", {})
@@ -188,11 +233,19 @@ def nfl_games(day):
                       "state": st.get("state", "pre"), "detail": st.get("shortDetail", ""),
                       "neutral": bool(comp.get("neutralSite")),
                       "city": (venue.get("address") or {}).get("city"),
-                      "week": nfl_week(day), "extra": None})
+                      "week": wk, "extra": None})
     return games
 
 
-SCHEDULES = {"MLB": mlb_games, "NFL": nfl_games, "NHL": nhl_games}
+def load_games(label, start_day, end_day):
+    if label == "MLB":
+        return mlb_games(start_day)
+    if label == "NHL":
+        return nhl_games(start_day)
+    return espn_games(label, start_day, end_day)
+
+
+
 
 
 # ---------------------------------------------------------------- scoresandodds (ROT numbers)
@@ -290,29 +343,37 @@ def sao_pairs(sao_path, day):
     return [(rows[i], rows[i + 1]) for i in range(0, len(rows) - 1, 2)]
 
 
-def team_matches(slug, team):
+def team_matches(slug, team, loose=False):
     s = norm(slug)
-    return bool(s) and (s == norm(team["nick"]) or s in norm(team["full"]))
+    if not s:
+        return False
+    names = {norm(team.get("nick")), norm(team.get("loc")), norm(team.get("full"))}
+    if s in names:
+        return True
+    return loose and (s in norm(team.get("full")) or norm(team.get("full")).startswith(s))
 
 
 def attach_rots(games, pairs):
-    used = set()
-    matched = 0
-    for g in games:
-        for i, (a, h) in enumerate(pairs):
-            if i in used:
+    """Match scoresandodds rows to games: exact team names first, then a looser pass."""
+    used, matched = set(), 0
+    for loose in (False, True):
+        for g in games:
+            if g.get("away_rot") is not None:
                 continue
-            if team_matches(a["team"], g["away"]) and team_matches(h["team"], g["home"]):
-                used.add(i)
-                g["away_rot"], g["home_rot"] = a["rot"], h["rot"]
-                g["away_odds"], g["home_odds"] = a.get("odds") or {}, h.get("odds") or {}
-                g["url"] = a.get("url") or h.get("url")
-                if a["pitcher"]:
-                    g["away"]["pitcher"] = a["pitcher"]
-                if h["pitcher"]:
-                    g["home"]["pitcher"] = h["pitcher"]
-                matched += 1
-                break
+            for i, (a, h) in enumerate(pairs):
+                if i in used:
+                    continue
+                if team_matches(a["team"], g["away"], loose) and team_matches(h["team"], g["home"], loose):
+                    used.add(i)
+                    g["away_rot"], g["home_rot"] = a["rot"], h["rot"]
+                    g["away_odds"], g["home_odds"] = a.get("odds") or {}, h.get("odds") or {}
+                    g["url"] = a.get("url") or h.get("url")
+                    if a["pitcher"]:
+                        g["away"]["pitcher"] = a["pitcher"]
+                    if h["pitcher"]:
+                        g["home"]["pitcher"] = h["pitcher"]
+                    matched += 1
+                    break
     return matched
 
 
@@ -391,78 +452,122 @@ def attach_props(label, games, rows):
 
 # ---------------------------------------------------------------- build
 
+SAO_CACHE = {}
+
+
+def sao_pairs_range(sao_path, start_day, end_day):
+    """ROT rows for every day in a range, de-duplicated (weekly pages may repeat games)."""
+    out, seen = [], set()
+    d = start_day
+    while d <= end_day:
+        key = (sao_path, d)
+        if key not in SAO_CACHE:
+            try:
+                SAO_CACHE[key] = sao_pairs(sao_path, d)
+            except Exception as e:
+                print(f"  [{sao_path} {d}] scoresandodds failed: {e!r}")
+                SAO_CACHE[key] = []
+        for pair in SAO_CACHE[key]:
+            if pair[0]["rot"] not in seen:
+                seen.add(pair[0]["rot"])
+                out.append(pair)
+        d += timedelta(days=1)
+    return out
+
+
+def game_row(label, sao_path, g, weekly):
+    return {
+        "lg": label,
+        "t": g["start"].isoformat(),
+        "time": g["start"].strftime("%-I:%M %p"),
+        "dl": g["start"].strftime("%a %-m/%-d") if weekly else None,
+        "ar": g.get("away_rot"), "hr": g.get("home_rot"),
+        "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
+        "as": g["away"].get("score"), "hs": g["home"].get("score"),
+        "url": g.get("url"),
+        "day_url": f"https://www.scoresandodds.com/{sao_path}?date={g['start'].date().isoformat()}",
+        "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
+        "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
+        "state": g["state"], "detail": g["detail"],
+        "props": g.get("props") or {},
+        "note": " · ".join(filter(None, [
+            g.get("extra"),
+            f"Week {g['week']}" if weekly and g.get("week") is not None else None,
+            f"Neutral site: {g['city']}" if g["neutral"] and g["city"] else None,
+        ])),
+    }
+
+
+def build_view(key, title, anchor_day, weekly_anchor, props_by_league, notes):
+    rows, ranges = [], []
+    for label, sao_path in LEAGUES:
+        weekly = MODE[label] == "weekly"
+        if weekly:
+            start_day, end_day = (nfl_week_range if label == "NFL" else ncaaf_week_range)(weekly_anchor)
+        else:
+            start_day = end_day = anchor_day
+        tag = f"{key} {label} {start_day:%-m/%-d}" + (f"-{end_day:%-m/%-d}" if weekly else "")
+        try:
+            games = load_games(label, start_day, end_day)
+        except Exception as e:
+            print(f"[{tag}] schedule failed: {e}")
+            notes.append(f"{label} schedule couldn't be loaded this run.")
+            continue
+        if weekly:
+            wk = week_number(label, start_day)
+            if games and wk is not None:
+                ranges.append(f"{label} Week {wk} ({start_day:%-m/%-d}–{end_day:%-m/%-d})")
+        if not games:
+            print(f"[{tag}] no games")
+            continue
+        try:
+            pairs = sao_pairs_range(sao_path, start_day, end_day)
+            matched = attach_rots(games, pairs)
+            with_odds = sum(1 for g in games if g.get("away_odds") or g.get("home_odds"))
+            print(f"[{tag}] {len(games)} games, {len(pairs)} ROT pairs, "
+                  f"{matched} matched, {with_odds} with odds")
+        except Exception as e:
+            print(f"[{tag}] scoresandodds failed: {e}")
+        if props_by_league.get(label):
+            attach_props(label, games, props_by_league[label])
+        rows.extend(game_row(label, sao_path, g, weekly) for g in games)
+    rows.sort(key=lambda x: (x["t"], x["ar"] or 99999))
+    return {"key": key, "label": title,
+            "long": " · ".join([anchor_day.strftime("%A, %B %-d")] + ranges),
+            "games": rows}
+
+
 def build():
     now = datetime.now(TZ)
-    days = [now.date() + timedelta(days=i) for i in range(DAYS_AHEAD + 1)]
-    out_days, notes = [], []
+    today = now.date()
+    notes = []
     try:
         todays_props = load_props()
     except Exception as e:
         print(f"[props] failed: {e!r}")
         todays_props = {}
 
-    for day in days:
-        day_games = []
-        for label, sao_path in LEAGUES:
-            try:
-                games = SCHEDULES[label](day)
-            except Exception as e:
-                print(f"[{day} {label}] schedule failed: {e}")
-                notes.append(f"{label} schedule for {day:%-m/%-d} couldn't be loaded this run.")
-                continue
-            if not games:
-                print(f"[{day} {label}] no games")
-                continue
-            try:
-                pairs = sao_pairs(sao_path, day)
-                matched = attach_rots(games, pairs)
-                with_odds = sum(1 for g in games if g.get("away_odds") or g.get("home_odds"))
-                print(f"[{day} {label}] {len(games)} games, {len(pairs)} ROT pairs, "
-                      f"{matched} matched, {with_odds} with odds")
-                if matched < len(games):
-                    notes.append(f"Some {label} ROT numbers for {day:%-m/%-d} aren't posted yet.")
-            except Exception as e:
-                print(f"[{day} {label}] scoresandodds failed: {e}")
-                notes.append(f"{label} ROT numbers for {day:%-m/%-d} couldn't be loaded this run.")
-            if day == now.date() and todays_props.get(label):
-                attach_props(label, games, todays_props[label])
-            for g in games:
-                day_games.append({
-                    "lg": label,
-                    "t": g["start"].isoformat(),
-                    "time": g["start"].strftime("%-I:%M %p"),
-                    "ar": g.get("away_rot"), "hr": g.get("home_rot"),
-                    "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
-                    "url": g.get("url"),
-                    "day_url": f"https://www.scoresandodds.com/{sao_path}?date={day.isoformat()}",
-                    "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
-                    "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
-                    "state": g["state"], "detail": g["detail"],
-                    "props": g.get("props") or {},
-                    "note": " · ".join(filter(None, [
-                        g.get("extra"),
-                        f"Week {g['week']}" if label == "NFL" and g["week"] else None,
-                        f"Neutral site: {g['city']}" if g["neutral"] and g["city"] else None,
-                    ])),
-                })
-        day_games.sort(key=lambda x: (x["t"], x["ar"] or 99999))
-        out_days.append({
-            "key": day.isoformat(),
-            "label": "Today" if day == now.date() else day.strftime("%A"),
-            "long": day.strftime("%A, %B %-d, %Y"),
-            "games": day_games,
-        })
-
+    current = build_view("current", "Today / This week", today, today, todays_props, notes)
+    previous = build_view("previous", "Yesterday / Last week", today - timedelta(days=1),
+                          today - timedelta(days=7), {}, notes)
+    # "Today": every league, today's games only (taken from the current view)
+    today_only = {
+        "key": "today", "label": "Today",
+        "long": today.strftime("%A, %B %-d"),
+        "games": [dict(g, dl=None) for g in current["games"]
+                  if g["t"][:10] == today.isoformat()],
+    }
+    views = [today_only, current, previous]
     payload = {
         "updated": now.strftime("%-I:%M %p CDT, %a %-m/%-d"),
-        "days": out_days,
+        "days": views,
         "notes": sorted(set(notes)),
     }
     template = Path(__file__).with_name("board_template.html").read_text(encoding="utf-8")
     page = template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/"))
     Path("site").mkdir(exist_ok=True)
     Path("site/index.html").write_text(page, encoding="utf-8")
-    total = sum(len(d["games"]) for d in out_days)
+    total = sum(len(v["games"]) for v in views[1:])
     print(f"Wrote site/index.html with {total} games at {payload['updated']}")
 
 

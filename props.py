@@ -22,6 +22,8 @@ ALIASES = {
             "VEG": "VGK", "WAS": "WSH", "CLB": "CBJ", "NAS": "NSH"},
     "NFL": {"WAS": "WSH", "JAC": "JAX", "LA": "LAR", "ARZ": "ARI", "BLT": "BAL", "CLV": "CLE",
             "HST": "HOU"},
+    "NBA": {"GSW": "GS", "NYK": "NY", "SAS": "SA", "NOP": "NO", "UTA": "UTAH", "WAS": "WSH",
+            "PHO": "PHX", "BRK": "BKN", "CHO": "CHA"},
 }
 
 
