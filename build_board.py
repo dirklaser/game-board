@@ -3,13 +3,15 @@
 Game Board builder.
 
 Builds site/index.html with today's and tomorrow's MLB, NFL and NHL games:
-  - start times, teams, pitchers, neutral sites and live status from ESPN's public scoreboard feed
+  - start times, teams, pitchers, neutral sites and live status from the MLB and NHL
+    official schedule feeds (NFL from ESPN's scoreboard feed)
   - ROT numbers (and MLB pitcher handedness) from scoresandodds.com
 
 Run by GitHub Actions on a schedule. Every run prints a short summary to the log,
 so if something stops matching you can see which league/day it was.
 """
 import html
+import unicodedata
 import json
 import re
 import sys
@@ -23,12 +25,8 @@ from bs4 import BeautifulSoup
 TZ = ZoneInfo("America/Chicago")
 DAYS_AHEAD = 1  # 0 = today only, 1 = today + tomorrow
 
-# (label, ESPN path, scoresandodds path)
-LEAGUES = [
-    ("MLB", "baseball/mlb", "mlb"),
-    ("NFL", "football/nfl", "nfl"),
-    ("NHL", "hockey/nhl", "nhl"),
-]
+# (label, scoresandodds path)
+LEAGUES = [("MLB", "mlb"), ("NFL", "nfl"), ("NHL", "nhl")]
 
 # Display-name overrides
 NAME_OVERRIDES = {
@@ -49,50 +47,147 @@ def norm(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
-def get(url, **kw):
-    r = requests.get(url, headers=HEADERS, timeout=25, **kw)
-    r.raise_for_status()
-    return r
+def get(url, plain=False, **kw):
+    """plain=True sends a normal script request; otherwise browser-like headers.
+    If one style is refused, the other is tried once."""
+    styles = [{}, HEADERS] if plain else [HEADERS, {}]
+    last = None
+    for h in styles:
+        try:
+            r = requests.get(url, headers=h, timeout=25, **kw)
+            r.raise_for_status()
+            return r
+        except requests.HTTPError as e:
+            last = e
+            if e.response is None or e.response.status_code not in (401, 403, 406, 429):
+                raise
+    raise last
 
 
-# ---------------------------------------------------------------- ESPN (times, teams)
+# ---------------------------------------------------------------- schedules (times, teams)
+# MLB and NHL use the leagues' own free feeds. NFL has no free official feed, so it
+# tries ESPN on a few different hosts (ESPN blocks some cloud servers).
 
-def espn_games(espn_path, day):
-    url = f"https://site.api.espn.com/apis/site/v2/sports/{espn_path}/scoreboard"
-    data = get(url, params={"dates": day.strftime("%Y%m%d")}).json()
-    week = (data.get("week") or {}).get("number")
+def to_ct(iso):
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(TZ)
+
+
+def mlb_games(day):
+    data = get("https://statsapi.mlb.com/api/v1/schedule", plain=True, params={
+        "sportId": 1, "date": day.isoformat(), "hydrate": "probablePitcher,team,linescore",
+    }).json()
+    games = []
+    for d in data.get("dates", []):
+        for g in d.get("games", []):
+            start = to_ct(g["gameDate"])
+            if start.date() != day:
+                continue
+            side = {}
+            for k in ("away", "home"):
+                t = g["teams"][k]
+                team = t.get("team", {})
+                full = team.get("name", "?")
+                side[k] = {
+                    "full": NAME_OVERRIDES.get(full, full),
+                    "nick": team.get("teamName") or team.get("clubName") or "",
+                    "pitcher": (t.get("probablePitcher") or {}).get("fullName"),
+                }
+            st = g.get("status", {})
+            abstract = st.get("abstractGameState", "Preview")
+            state = {"Live": "in", "Final": "post"}.get(abstract, "pre")
+            detail = st.get("detailedState", "")
+            ls = g.get("linescore") or {}
+            if state == "in" and ls.get("currentInningOrdinal"):
+                detail = f"{ls.get('inningHalf', '')} {ls['currentInningOrdinal']}".strip()
+            note = None
+            if g.get("gameType") not in (None, "R") and g.get("seriesDescription"):
+                note = g["seriesDescription"]
+                if g.get("seriesGameNumber"):
+                    note += f", Game {g['seriesGameNumber']}"
+            games.append({"start": start, "away": side["away"], "home": side["home"],
+                          "state": state, "detail": detail, "neutral": False,
+                          "city": None, "week": None, "extra": note})
+    return games
+
+
+def nhl_games(day):
+    data = get(f"https://api-web.nhle.com/v1/schedule/{day.isoformat()}", plain=True).json()
+    games = []
+    for d in data.get("gameWeek", []):
+        for g in d.get("games", []):
+            start = to_ct(g["startTimeUTC"])
+            if start.date() != day:
+                continue
+            side = {}
+            for k, key in (("away", "awayTeam"), ("home", "homeTeam")):
+                t = g.get(key, {})
+                place = (t.get("placeName") or {}).get("default", "")
+                nick = (t.get("commonName") or {}).get("default", "")
+                full = (t.get("name") or {}).get("default") or f"{place} {nick}".strip()
+                full = unicodedata.normalize("NFKD", full).encode("ascii", "ignore").decode()
+                side[k] = {"full": full, "nick": nick, "pitcher": None}
+            gs = g.get("gameState", "FUT")
+            state = "post" if gs in ("FINAL", "OFF") else "in" if gs in ("LIVE", "CRIT") else "pre"
+            detail = "Final" if state == "post" else "Live" if state == "in" else ""
+            games.append({"start": start, "away": side["away"], "home": side["home"],
+                          "state": state, "detail": detail,
+                          "neutral": bool(g.get("neutralSite")),
+                          "city": (g.get("venue") or {}).get("default"),
+                          "week": None,
+                          "extra": "Preseason" if g.get("gameType") == 1 else None})
+    return games
+
+
+def nfl_week(day):
+    # 2026 season: Week 1 runs Tue 9/8 - Mon 9/14
+    from datetime import date
+    n = (day - date(2026, 9, 8)).days // 7 + 1
+    return n if 1 <= n <= 18 else None
+
+
+def nfl_games(day):
+    ds = day.strftime("%Y%m%d")
+    attempts = [
+        (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={ds}", True),
+        (f"https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={ds}", True),
+        (f"https://cdn.espn.com/core/nfl/scoreboard?xhr=1&dates={ds}", True),
+        (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={ds}", False),
+    ]
+    last = None
+    for url, plain in attempts:
+        try:
+            data = get(url, plain=plain).json()
+            if "content" in data:
+                data = data["content"].get("sbData", {})
+            break
+        except Exception as e:
+            last = e
+    else:
+        raise last
     games = []
     for ev in data.get("events", []):
         comp = ev["competitions"][0]
-        start = datetime.fromisoformat(ev["date"].replace("Z", "+00:00")).astimezone(TZ)
+        start = to_ct(ev["date"])
         if start.date() != day:
             continue
         side = {}
         for c in comp.get("competitors", []):
             t = c.get("team", {})
-            full = t.get("displayName") or t.get("name") or "?"
-            probables = c.get("probables") or []
-            pitcher = probables[0].get("athlete", {}).get("displayName") if probables else None
-            side[c.get("homeAway")] = {
-                "full": NAME_OVERRIDES.get(full, full),
-                "nick": t.get("name") or t.get("shortDisplayName") or "",
-                "pitcher": pitcher,
-            }
+            side[c.get("homeAway")] = {"full": t.get("displayName", "?"),
+                                       "nick": t.get("name") or "", "pitcher": None}
         if "home" not in side or "away" not in side:
             continue
-        status = ev.get("status", {}).get("type", {})
+        st = ev.get("status", {}).get("type", {})
         venue = comp.get("venue", {}) or {}
-        games.append({
-            "start": start,
-            "away": side["away"],
-            "home": side["home"],
-            "state": status.get("state", "pre"),          # pre / in / post
-            "detail": status.get("shortDetail", ""),
-            "neutral": bool(comp.get("neutralSite")),
-            "city": (venue.get("address") or {}).get("city"),
-            "week": week,
-        })
+        games.append({"start": start, "away": side["away"], "home": side["home"],
+                      "state": st.get("state", "pre"), "detail": st.get("shortDetail", ""),
+                      "neutral": bool(comp.get("neutralSite")),
+                      "city": (venue.get("address") or {}).get("city"),
+                      "week": nfl_week(day), "extra": None})
     return games
+
+
+SCHEDULES = {"MLB": mlb_games, "NFL": nfl_games, "NHL": nhl_games}
 
 
 # ---------------------------------------------------------------- scoresandodds (ROT numbers)
@@ -164,11 +259,11 @@ def build():
 
     for day in days:
         day_games = []
-        for label, espn_path, sao_path in LEAGUES:
+        for label, sao_path in LEAGUES:
             try:
-                games = espn_games(espn_path, day)
+                games = SCHEDULES[label](day)
             except Exception as e:
-                print(f"[{day} {label}] ESPN failed: {e}")
+                print(f"[{day} {label}] schedule failed: {e}")
                 notes.append(f"{label} schedule for {day:%-m/%-d} couldn't be loaded this run.")
                 continue
             if not games:
@@ -192,7 +287,8 @@ def build():
                     "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
                     "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
                     "state": g["state"], "detail": g["detail"],
-                    "note": " ".join(filter(None, [
+                    "note": " · ".join(filter(None, [
+                        g.get("extra"),
                         f"Week {g['week']}" if label == "NFL" and g["week"] else None,
                         f"Neutral site: {g['city']}" if g["neutral"] and g["city"] else None,
                     ])),
