@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="300">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wix's Game Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#e9eef2; --sheet:#f8fafb; --ink:#1b2530; --muted:#5d6b78; --rule:#cfd8df;
+  --mlb:#1f3f73; --nhl:#4a5a68; --nfl:#2f6b3b; --live:#b3261e; --chip:#dde5eb;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
+    --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --live:#ff7a6e; --chip:#26313b;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
+  --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --live:#ff7a6e; --chip:#26313b;
+}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Barlow,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45}
+.wrap{max-width:860px;margin:0 auto;padding:28px 16px 48px}
+header h1{font-family:"Barlow Condensed","Arial Narrow",Arial,sans-serif;font-weight:700;font-size:clamp(2.2rem,6vw,3.4rem);line-height:1;margin:0;letter-spacing:-.01em}
+header p{margin:6px 0 0;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 14px;align-items:center}
+.controls .spacer{flex:1}
+button.chip{font:inherit;font-weight:600;font-size:.9rem;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);padding:6px 14px;border-radius:999px;cursor:pointer}
+button.chip[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
+.sheet{background:var(--sheet);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.game{display:grid;grid-template-columns:78px 58px 1fr;gap:4px 14px;padding:14px 18px;border-top:1px solid var(--rule);align-items:start}
+.game:first-child{border-top:0}
+.time{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.35rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.time small{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--live);margin-top:3px}
+.lg{font-weight:600;font-size:.78rem;padding:2px 0;text-align:center;border-radius:4px;color:var(--sheet);margin-top:3px}
+.lg.MLB{background:var(--mlb)} .lg.NHL{background:var(--nhl)} .lg.NFL{background:var(--nfl)}
+.teams{display:grid;grid-template-columns:44px 1fr;gap:2px 10px}
+.rot{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:500;text-align:right}
+.team{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.2rem;line-height:1.25}
+.team .p{font-family:Barlow,sans-serif;font-weight:400;font-size:.88rem;color:var(--muted);margin-left:6px}
+.note{grid-column:3;font-size:.82rem;color:var(--muted)}
+.game.past{opacity:.55}
+.time small.final{color:var(--muted)}
+#days{margin-bottom:0}
+.empty{padding:28px 18px;color:var(--muted)}
+footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
+@media (max-width:520px){
+  .game{grid-template-columns:62px 1fr;padding:12px 14px}
+  .lg{grid-column:1;grid-row:2;width:44px}
+  .teams{grid-column:2;grid-row:1 / span 2}
+  .note{grid-column:2}
+  .team{font-size:1.08rem}
+  .team .p{display:block;margin-left:0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Game Board</h1>
+    <p id="dateline"></p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Day" id="days"></div>
+  <div class="controls" role="group" aria-label="Filter and sort">
+    <button class="chip" data-f="ALL" aria-pressed="true">All</button>
+    <button class="chip" data-f="MLB" aria-pressed="false">MLB</button>
+    <button class="chip" data-f="NFL" aria-pressed="false">NFL</button>
+    <button class="chip" data-f="NHL" aria-pressed="false">NHL</button>
+    <span class="spacer"></span>
+    <button class="chip" data-s="time" aria-pressed="true">By time</button>
+    <button class="chip" data-s="rot" aria-pressed="false">By ROT</button>
+  </div>
+
+  <div class="sheet" id="list"></div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const BOARD = __DATA__;
+let filter = "ALL", sort = "time", dayIdx = 0;
+const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){
+  const day = BOARD.days[dayIdx] || {games:[],long:""};
+  document.getElementById("dateline").textContent = day.long + " · all times CDT";
+  let g = day.games.filter(x => filter==="ALL" || x.lg===filter);
+  g.sort(sort==="time"
+    ? (a,b)=> a.t.localeCompare(b.t) || (a.ar||99999)-(b.ar||99999)
+    : (a,b)=> (a.ar||99999)-(b.ar||99999) || a.t.localeCompare(b.t));
+  const list = document.getElementById("list");
+  if(!g.length){
+    list.innerHTML = `<div class="empty">No ${filter==="ALL"?"":filter+" "}games ${dayIdx===0?"today":"on "+esc(day.label)}.</div>`;
+  } else {
+    list.innerHTML = g.map(x=>{
+      const status = x.state==="in" ? `<small>${esc(x.detail||"Live")}</small>`
+                   : x.state==="post" ? `<small class="final">${esc(x.detail||"Final")}</small>` : "";
+      return `<div class="game${x.state==="post"?" past":""}">
+        <div class="time">${esc(x.time)}${status}</div>
+        <div class="lg ${x.lg}">${x.lg}</div>
+        <div class="teams">
+          <div class="rot">${x.ar ?? "—"}</div>
+          <div class="team">${esc(x.a)}${x.ap?`<span class="p">${esc(x.ap)}</span>`:""}</div>
+          <div class="rot">${x.hr ?? "—"}</div>
+          <div class="team">@ ${esc(x.h)}${x.hp?`<span class="p">${esc(x.hp)}</span>`:""}</div>
+        </div>
+        ${x.note?`<div class="note">${esc(x.note)}</div>`:""}
+      </div>`;
+    }).join("");
+  }
+  document.getElementById("foot").innerHTML =
+    BOARD.notes.map(n=>`<p>${esc(n)}</p>`).join("") +
+    `<p>Updated ${esc(BOARD.updated)}. Refreshes automatically. ROT numbers from scoresandodds.com.</p>`;
+}
+
+const daysEl = document.getElementById("days");
+daysEl.innerHTML = BOARD.days.map((d,i)=>`<button class="chip" data-d="${i}" aria-pressed="${i===0}">${esc(d.label)}</button>`).join("");
+daysEl.querySelectorAll("[data-d]").forEach(b=>b.addEventListener("click",()=>{
+  dayIdx=+b.dataset.d;
+  daysEl.querySelectorAll("[data-d]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  render();
+}));
+document.querySelectorAll("[data-f]").forEach(b=>b.addEventListener("click",()=>{
+  filter=b.dataset.f;
+  document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  render();
+}));
+document.querySelectorAll("[data-s]").forEach(b=>b.addEventListener("click",()=>{
+  sort=b.dataset.s;
+  document.querySelectorAll("[data-s]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  render();
+}));
+render();
+</script>
+</body>
+</html>
