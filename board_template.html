@@ -13,18 +13,18 @@
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   --bg:#e9eef2; --sheet:#f8fafb; --ink:#1b2530; --muted:#5d6b78; --rule:#cfd8df;
-  --mlb:#1f3f73; --nhl:#4a5a68; --nfl:#2f6b3b; --nba:#9a4a14; --ncaaf:#6b2d5c; --live:#b3261e; --chip:#dde5eb;
+  --mlb:#1f3f73; --nhl:#4a5a68; --nfl:#2f6b3b; --nba:#9a4a14; --ncaaf:#6b2d5c; --ncaab:#1f6f78; --live:#b3261e; --chip:#dde5eb;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
-    --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --nba:#f0a46a; --ncaaf:#d79ac6; --live:#ff7a6e; --chip:#26313b;
+    --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --nba:#f0a46a; --ncaaf:#d79ac6; --ncaab:#7fd0d8; --live:#ff7a6e; --chip:#26313b;
   }
 }
 :root[data-theme="dark"]{
   --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
-  --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --nba:#f0a46a; --ncaaf:#d79ac6; --live:#ff7a6e; --chip:#26313b;
+  --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --nba:#f0a46a; --ncaaf:#d79ac6; --ncaab:#7fd0d8; --live:#ff7a6e; --chip:#26313b;
 }
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Barlow,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45}
@@ -33,6 +33,12 @@ header h1{font-family:"Barlow Condensed","Arial Narrow",Arial,sans-serif;font-we
 header p{margin:6px 0 0;color:var(--muted)}
 .controls{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 14px;align-items:center}
 .controls .spacer{flex:1}
+.fwrap{overflow-x:auto;max-width:100%;padding-bottom:2px}
+.fgrid{display:inline-grid;grid-template-columns:repeat(7,auto);column-gap:8px;row-gap:0;align-items:center}
+.fgrid .grp{justify-self:center;grid-row:1}
+.fgrid .brk{grid-row:2;height:7px;margin:3px 14px 4px;border:1.5px solid var(--rule);border-bottom:0;border-radius:6px 6px 0 0;position:relative}
+.fgrid .brk::before{content:"";position:absolute;left:50%;top:-4px;width:1.5px;height:4px;background:var(--rule);transform:translateX(-50%)}
+.controls{align-items:flex-end}
 button.chip{font:inherit;font-weight:600;font-size:.9rem;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);padding:6px 14px;border-radius:999px;cursor:pointer}
 button.chip[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
 button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
@@ -43,7 +49,7 @@ button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
 .time small{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--live);margin-top:3px}
 .lg{font-weight:600;font-size:.78rem;padding:2px 0;text-align:center;border-radius:4px;color:var(--sheet);margin-top:3px}
 .lg.MLB{background:var(--mlb)} .lg.NHL{background:var(--nhl)} .lg.NFL{background:var(--nfl)}
-.lg.NBA{background:var(--nba)} .lg.NCAAF{background:var(--ncaaf)}
+.lg.NBA{background:var(--nba)} .lg.NCAAF{background:var(--ncaaf)} .lg.NCAAB{background:var(--ncaab)}
 .time .dl{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--muted);margin:0 0 2px;letter-spacing:.01em}
 .team .sc{font-family:Barlow,sans-serif;font-weight:600;font-size:.95rem;margin-left:8px;font-variant-numeric:tabular-nums}
 .teams{display:grid;grid-template-columns:44px minmax(0,1fr) repeat(4,80px);gap:2px 10px;align-items:baseline}
@@ -95,6 +101,10 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
   .team{font-size:1.08rem}
   .teams{grid-template-columns:34px minmax(0,1fr) repeat(3,58px);gap:2px 6px}
   .open{display:none}
+  .wrap{padding-left:12px;padding-right:12px}
+  .fgrid{column-gap:3px}
+  .fgrid .brk{margin:3px 10px 4px}
+  .fgrid .chip{padding:4px 7px;font-size:.76rem}
   .odd{font-size:.8rem}
   .team .p{display:block;margin-left:0}
 }
@@ -109,12 +119,21 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 
   <div class="controls" role="group" aria-label="Day" id="days"></div>
   <div class="controls" role="group" aria-label="Filter and sort">
-    <button class="chip" data-f="ALL" aria-pressed="true">All</button>
-    <button class="chip" data-f="MLB" aria-pressed="false">MLB</button>
-    <button class="chip" data-f="NBA" aria-pressed="false">NBA</button>
-    <button class="chip" data-f="NHL" aria-pressed="false">NHL</button>
-    <button class="chip" data-f="NFL" aria-pressed="false">NFL</button>
-    <button class="chip" data-f="NCAAF" aria-pressed="false">NCAAF</button>
+    <div class="fwrap">
+      <div class="fgrid">
+        <button class="chip grp" data-f="BASKETBALL" aria-pressed="false" style="grid-column:3 / span 2">Basketball</button>
+        <button class="chip grp" data-f="FOOTBALL" aria-pressed="false" style="grid-column:5 / span 2">Football</button>
+        <span class="brk" aria-hidden="true" style="grid-column:3 / span 2"></span>
+        <span class="brk" aria-hidden="true" style="grid-column:5 / span 2"></span>
+        <button class="chip" data-f="ALL" aria-pressed="true" style="grid-row:3">All</button>
+        <button class="chip" data-f="MLB" aria-pressed="false" style="grid-row:3">MLB</button>
+        <button class="chip" data-f="NCAAB" aria-pressed="false" style="grid-row:3">NCAAB</button>
+        <button class="chip" data-f="NBA" aria-pressed="false" style="grid-row:3">NBA</button>
+        <button class="chip" data-f="NCAAF" aria-pressed="false" style="grid-row:3">NCAAF</button>
+        <button class="chip" data-f="NFL" aria-pressed="false" style="grid-row:3">NFL</button>
+        <button class="chip" data-f="NHL" aria-pressed="false" style="grid-row:3">NHL</button>
+      </div>
+    </div>
     <span class="spacer"></span>
     <button class="chip" data-s="time" aria-pressed="true">By time</button>
     <button class="chip" data-s="rot" aria-pressed="false">By ROT</button>
@@ -129,7 +148,9 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 const BOARD = __DATA__;
 let filter = "ALL", sort = "time", dayIdx = BOARD.start_tab || 0;
 const showScore = x => x.state!=="pre" && x.as!=null && x.hs!=null && x.as!=="" && x.hs!=="";
-const LINE = {MLB:"Run line", NHL:"Puck line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread"};
+const LINE = {MLB:"Run line", NHL:"Puck line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread", NCAAB:"Spread"};
+const GROUPS = {BASKETBALL:["NCAAB","NBA"], FOOTBALL:["NCAAF","NFL"]};
+const inFilter = x => filter==="ALL" || x.lg===filter || (GROUPS[filter]||[]).includes(x.lg);
 const openProps = new Set(), propCat = {};
 BOARD.days.forEach((d,di)=>d.games.forEach((g,gi)=>g._i=`${di}-${gi}`));
 const propCount = x => Object.values(x.props||{}).reduce((n,a)=>n+a.length,0);
@@ -182,13 +203,13 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;","
 function render(){
   const day = BOARD.days[dayIdx] || {games:[],long:""};
   document.getElementById("dateline").textContent = day.long + " · all times CDT";
-  let g = day.games.filter(x => filter==="ALL" || x.lg===filter);
+  let g = day.games.filter(inFilter);
   g.sort(sort==="time"
     ? (a,b)=> a.t.localeCompare(b.t) || (a.ar||99999)-(b.ar||99999)
     : (a,b)=> (a.ar||99999)-(b.ar||99999) || a.t.localeCompare(b.t));
   const list = document.getElementById("list");
   if(!g.length){
-    list.innerHTML = `<div class="empty">No ${filter==="ALL"?"":filter+" "}games for ${esc(day.label.toLowerCase())}.</div>`;
+    list.innerHTML = `<div class="empty">No ${filter==="ALL"?"":(GROUPS[filter]?filter.toLowerCase():filter)+" "}games for ${esc(day.label.toLowerCase())}.</div>`;
   } else {
     list.innerHTML = g.map(x=>{
       const status = x.state==="in" ? `<small>${esc(x.detail||"Live")}</small>`

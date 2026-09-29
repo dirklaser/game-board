@@ -4,7 +4,7 @@ Game Board builder.
 
 Builds site/index.html with two views:
   - "Today":                 every league's games for today only
-  - "Today / This week":     today's MLB, NBA, NHL games + this week's NFL (Tue-Mon) and NCAAF (Mon-Sun)
+  - "Today / This week":     today's MLB, NCAAB, NBA, NHL games + this week's NFL (Tue-Mon) and NCAAF (Mon-Sun)
   - "Yesterday / Last week": yesterday's daily games + last week's NFL and NCAAF
 Data:
   - start times, teams, pitchers, neutral sites and live status from the MLB and NHL
@@ -33,10 +33,11 @@ TZ = ZoneInfo("America/Chicago")
 # (label, scoresandodds path, "daily" or "weekly")
 LEAGUE_INFO = [
     ("MLB", "mlb", "daily"),
+    ("NCAAB", "ncaab", "daily"),
     ("NBA", "nba", "daily"),
-    ("NHL", "nhl", "daily"),
-    ("NFL", "nfl", "weekly"),
     ("NCAAF", "ncaaf", "weekly"),
+    ("NFL", "nfl", "weekly"),
+    ("NHL", "nhl", "daily"),
 ]
 LEAGUES = [(label, path) for label, path, _ in LEAGUE_INFO]
 MODE = {label: mode for label, _, mode in LEAGUE_INFO}
@@ -183,7 +184,8 @@ def week_number(label, start):
 
 ESPN_PATHS = {"NFL": ("football", "nfl", {}),
               "NCAAF": ("football", "college-football", {"groups": "80", "limit": "500"}),
-              "NBA": ("basketball", "nba", {})}
+              "NBA": ("basketball", "nba", {}),
+              "NCAAB": ("basketball", "mens-college-basketball", {"groups": "50", "limit": "500"})}
 
 
 ESPN_WORKING = {}   # remembers which ESPN address worked, per league, for this run
@@ -583,7 +585,7 @@ def build():
         "games": [dict(g, dl=None) for g in current["games"]
                   if g["t"][:10] == today.isoformat()],
     }
-    views = [current, today_only, previous]
+    views = [previous, today_only, current]
     payload = {
         "start_tab": 1,   # open on "Today"
         "updated": now.strftime("%-I:%M %p CDT, %a %-m/%-d"),
