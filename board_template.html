@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="300">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wix's Game Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -54,6 +53,21 @@ button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
 .note{grid-column:3;font-size:.82rem;color:var(--muted)}
 .game.past{opacity:.55}
 a.gd{color:var(--mlb);font-weight:600;text-decoration:none}
+button.pb{font:inherit;font-weight:600;color:var(--mlb);background:none;border:0;padding:0;cursor:pointer}
+button.pb:hover{text-decoration:underline}
+button.pb:focus-visible{outline:2px solid var(--mlb);outline-offset:2px;border-radius:2px}
+.props{grid-column:1 / -1;margin-top:10px;border-top:1px dashed var(--rule);padding-top:10px}
+.props[hidden]{display:none}
+.pcats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.pcats button{font:inherit;font-size:.8rem;font-weight:600;border:1px solid var(--rule);background:var(--bg);color:var(--ink);padding:3px 10px;border-radius:999px;cursor:pointer}
+.pcats button[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+.ptable-wrap{overflow-x:auto}
+table.pt{border-collapse:collapse;width:100%;font-size:.9rem}
+table.pt th{font-size:.72rem;font-weight:600;color:var(--muted);text-align:right;padding:4px 8px;border-bottom:1px solid var(--rule)}
+table.pt th:first-child,table.pt td:first-child{text-align:left}
+table.pt td{padding:5px 8px;border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.pt td small{display:block;color:var(--muted);font-size:.72rem}
+table.pt td .tm{color:var(--muted);font-size:.78rem;margin-left:6px}
 a.gd:hover{text-decoration:underline}
 a.gd:focus-visible{outline:2px solid var(--mlb);outline-offset:2px;border-radius:2px}
 .time small.final{color:var(--muted)}
@@ -100,6 +114,36 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 const BOARD = __DATA__;
 let filter = "ALL", sort = "time", dayIdx = 0;
 const LINE = {MLB:"Run line", NHL:"Puck line", NFL:"Spread"};
+const openProps = new Set(), propCat = {};
+BOARD.days.forEach((d,di)=>d.games.forEach((g,gi)=>g._i=`${di}-${gi}`));
+const propCount = x => Object.values(x.props||{}).reduce((n,a)=>n+a.length,0);
+function propsPanel(x){
+  const cats = Object.keys(x.props||{});
+  if(!cats.length) return "";
+  const cur = propCat[x._i] && x.props[propCat[x._i]] ? propCat[x._i] : cats[0];
+  const rows = x.props[cur];
+  const two = rows.some(r=>r.o.length>1);
+  const cell = o => o ? `${esc([o[0],o[1]].filter(Boolean).join(" "))}<small>${esc(o[2]||"")}</small>` : "—";
+  return `<div class="pcats">${cats.map(c=>`<button data-pc="${esc(c)}" data-g="${x._i}" aria-pressed="${c===cur}">${esc(c)} (${x.props[c].length})</button>`).join("")}</div>
+    <div class="ptable-wrap"><table class="pt"><thead><tr><th>Player</th>${two?"<th>Over</th><th>Under</th>":"<th>Best odds</th>"}</tr></thead><tbody>
+    ${rows.map(r=>`<tr><td>${esc(r.p)}<span class="tm">${esc(r.t)}</span></td>${two?`<td>${cell(r.o[0])}</td><td>${cell(r.o[1])}</td>`:`<td>${cell(r.o[0])}</td>`}</tr>`).join("")}
+    </tbody></table></div>`;
+}
+const findGame = id => { const [di,gi]=id.split("-").map(Number); return BOARD.days[di].games[gi]; };
+document.addEventListener("click", e=>{
+  const pb = e.target.closest("button.pb");
+  if(pb){
+    const id = pb.dataset.g, panel = document.getElementById("props-"+id);
+    if(openProps.has(id)){ openProps.delete(id); panel.hidden = true; panel.innerHTML = ""; pb.setAttribute("aria-expanded","false"); }
+    else { openProps.add(id); panel.innerHTML = propsPanel(findGame(id)); panel.hidden = false; pb.setAttribute("aria-expanded","true"); }
+    return;
+  }
+  const pc = e.target.closest("button[data-pc]");
+  if(pc){
+    propCat[pc.dataset.g] = pc.dataset.pc;
+    document.getElementById("props-"+pc.dataset.g).innerHTML = propsPanel(findGame(pc.dataset.g));
+  }
+});
 const odds = o => ["open","ml","tot","line"].map(k=>`<div class="odd${k==="open"?" open":""}">${esc((o||{})[k]||"—")}</div>`).join("");
 const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -130,7 +174,8 @@ function render(){
           <div class="team">@ ${esc(x.h)}${x.hp?`<span class="p">${esc(x.hp)}</span>`:""}</div>
           ${odds(x.ho)}
         </div>
-        <div class="note">${x.note?esc(x.note)+" · ":""}<a class="gd" href="${esc(x.day_url||x.url)}" target="_blank" rel="noopener">Game details</a>${x.url?` · <a class="gd" href="${esc(x.url)}" target="_blank" rel="noopener">Matchup</a>`:""}</div>
+        <div class="note">${x.note?esc(x.note)+" · ":""}<a class="gd" href="${esc(x.day_url||x.url)}" target="_blank" rel="noopener">Game details</a>${x.url?` · <a class="gd" href="${esc(x.url)}" target="_blank" rel="noopener">Matchup</a>`:""}${propCount(x)?` · <button class="pb" data-g="${x._i}" aria-expanded="${openProps.has(x._i)}">Props (${propCount(x)})</button>`:""}</div>
+        <div class="props" id="props-${x._i}" ${openProps.has(x._i)?"":"hidden"}>${openProps.has(x._i)?propsPanel(x):""}</div>
       </div>`;
     }).join("");
   }
@@ -157,6 +202,8 @@ document.querySelectorAll("[data-s]").forEach(b=>b.addEventListener("click",()=>
   render();
 }));
 render();
+// Reload for fresh data every 5 minutes, but not while a props panel is open
+setInterval(()=>{ if(!openProps.size) location.reload(); }, 300000);
 </script>
 </body>
 </html>

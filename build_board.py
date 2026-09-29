@@ -22,6 +22,8 @@ from zoneinfo import ZoneInfo
 import requests
 from bs4 import BeautifulSoup
 
+import props
+
 TZ = ZoneInfo("America/Chicago")
 DAYS_AHEAD = 1  # 0 = today only, 1 = today + tomorrow
 
@@ -47,12 +49,13 @@ def norm(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
-def get(url, plain=False, **kw):
+def get(url, plain=False, extra_headers=None, **kw):
     """plain=True sends a normal script request; otherwise browser-like headers.
     If one style is refused, the other is tried once."""
     styles = [{}, HEADERS] if plain else [HEADERS, {}]
     last = None
     for h in styles:
+        h = {**h, **(extra_headers or {})}
         try:
             r = requests.get(url, headers=h, timeout=25, **kw)
             r.raise_for_status()
@@ -91,6 +94,7 @@ def mlb_games(day):
                     "full": NAME_OVERRIDES.get(full, full),
                     "nick": team.get("teamName") or team.get("clubName") or "",
                     "pitcher": (t.get("probablePitcher") or {}).get("fullName"),
+                    "abbr": team.get("abbreviation", ""),
                 }
             st = g.get("status", {})
             abstract = st.get("abstractGameState", "Preview")
@@ -125,7 +129,7 @@ def nhl_games(day):
                 nick = (t.get("commonName") or {}).get("default", "")
                 full = (t.get("name") or {}).get("default") or f"{place} {nick}".strip()
                 full = unicodedata.normalize("NFKD", full).encode("ascii", "ignore").decode()
-                side[k] = {"full": full, "nick": nick, "pitcher": None}
+                side[k] = {"full": full, "nick": nick, "pitcher": None, "abbr": t.get("abbrev", "")}
             gs = g.get("gameState", "FUT")
             state = "post" if gs in ("FINAL", "OFF") else "in" if gs in ("LIVE", "CRIT") else "pre"
             detail = "Final" if state == "post" else "Live" if state == "in" else ""
@@ -174,7 +178,8 @@ def nfl_games(day):
         for c in comp.get("competitors", []):
             t = c.get("team", {})
             side[c.get("homeAway")] = {"full": t.get("displayName", "?"),
-                                       "nick": t.get("name") or "", "pitcher": None}
+                                       "nick": t.get("name") or "", "pitcher": None,
+                                       "abbr": t.get("abbreviation", "")}
         if "home" not in side or "away" not in side:
             continue
         st = ev.get("status", {}).get("type", {})
@@ -311,12 +316,74 @@ def attach_rots(games, pairs):
     return matched
 
 
+# ---------------------------------------------------------------- props
+
+BOOK_NAMES = {"riverscasino": "BetRivers", "betrivers": "BetRivers", "fanduel": "FanDuel",
+              "draftkings": "DraftKings", "betmgm": "BetMGM", "caesars": "Caesars",
+              "fanatics": "Fanatics", "bet365": "bet365", "hardrock": "Hard Rock",
+              "espnbet": "ESPN BET", "borgata": "Borgata"}
+
+
+def load_props():
+    """Returns {league_label: [rows]} for today's props, direct first, browser if needed."""
+    out, need_browser = {}, []
+    for label, sao_path in LEAGUES:
+        try:
+            rows, ncats = props.fetch_direct(get, sao_path)
+            print(f"[props {label}] direct: {ncats} categories, {len(rows)} props")
+        except Exception as e:
+            rows = []
+            print(f"[props {label}] direct failed: {e!r}")
+        if rows:
+            out[label] = rows
+        else:
+            need_browser.append((label, sao_path))
+    if need_browser:
+        try:
+            got = props.fetch_browser([sp for _, sp in need_browser])
+            for label, sp in need_browser:
+                out[label] = got.get(sp, [])
+                print(f"[props {label}] browser: {len(out[label])} props")
+        except Exception as e:
+            print(f"[props] browser fallback failed: {e!r}")
+    return out
+
+
+def attach_props(label, games, rows):
+    index = {}
+    for g in games:
+        key = frozenset({props.canon(label, g["away"].get("abbr")),
+                         props.canon(label, g["home"].get("abbr"))})
+        index[key] = g
+    unmatched = set()
+    for r in rows:
+        key = frozenset({props.canon(label, r["team"]), props.canon(label, r["opp"])})
+        g = index.get(key)
+        if g is None:
+            unmatched.add(f"{r['team']}-{r['opp']}")
+            continue
+        g.setdefault("props", {}).setdefault(r["cat"], []).append({
+            "p": r["player"], "t": r["team"],
+            "o": [[x["line"], x["odds"], BOOK_NAMES.get(x["book"], x["book"])] for x in r["prices"]],
+        })
+    n = sum(len(v) for g in games for v in (g.get("props") or {}).values())
+    msg = f"[props {label}] attached {n} of {len(rows)}"
+    if unmatched:
+        msg += f"; not on today's board: {', '.join(sorted(unmatched)[:8])}"
+    print(msg)
+
+
 # ---------------------------------------------------------------- build
 
 def build():
     now = datetime.now(TZ)
     days = [now.date() + timedelta(days=i) for i in range(DAYS_AHEAD + 1)]
     out_days, notes = [], []
+    try:
+        todays_props = load_props()
+    except Exception as e:
+        print(f"[props] failed: {e!r}")
+        todays_props = {}
 
     for day in days:
         day_games = []
@@ -341,6 +408,8 @@ def build():
             except Exception as e:
                 print(f"[{day} {label}] scoresandodds failed: {e}")
                 notes.append(f"{label} ROT numbers for {day:%-m/%-d} couldn't be loaded this run.")
+            if day == now.date() and todays_props.get(label):
+                attach_props(label, games, todays_props[label])
             for g in games:
                 day_games.append({
                     "lg": label,
@@ -353,6 +422,7 @@ def build():
                     "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
                     "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
                     "state": g["state"], "detail": g["detail"],
+                    "props": g.get("props") or {},
                     "note": " · ".join(filter(None, [
                         g.get("extra"),
                         f"Week {g['week']}" if label == "NFL" and g["week"] else None,
