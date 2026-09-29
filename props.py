@@ -158,6 +158,14 @@ COMPARE_URL = "https://rga51lus77.execute-api.us-east-1.amazonaws.com/prod/marke
 COMPARE_BOOKS = ("bet365", "fanduel", "draftkings")
 
 
+def _valid(american):
+    """Real American odds are +100 or higher, or -100 or lower. 0/None mean suspended."""
+    try:
+        return abs(float(american)) >= 100
+    except (TypeError, ValueError):
+        return False
+
+
 def _payout(american):
     a = float(american)
     return 1 + (a / 100 if a > 0 else 100 / -a)
@@ -169,9 +177,11 @@ def _book_lines(market):
     for book, c in (market.get("comparison") or {}).items():
         if book not in COMPARE_BOOKS or not c.get("available", True):
             continue
-        if c.get("over") is None and c.get("under") is None:
+        over = c.get("over") if _valid(c.get("over")) else None
+        under = c.get("under") if _valid(c.get("under")) else None
+        if over is None and under is None:
             continue
-        out[book] = {"v": c.get("value"), "o": c.get("over"), "u": c.get("under")}
+        out[book] = {"v": c.get("value"), "o": over, "u": under}
     return out
 
 

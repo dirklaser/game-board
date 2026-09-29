@@ -375,7 +375,10 @@ def attach_props(label, games, rows):
             "o": [[x["line"], x["odds"], BOOK_NAMES.get(x["book"], x["book"])] for x in r["prices"]],
         }
         if r.get("books"):
-            bo, bu = props.best_books(r["books"])
+            try:
+                bo, bu = props.best_books(r["books"])
+            except Exception:
+                bo = bu = None
             entry["b"] = r["books"]
             entry["bo"], entry["bu"] = bo, bu
         g.setdefault("props", {}).setdefault(r["cat"], []).append(entry)
