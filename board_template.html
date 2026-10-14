@@ -13,18 +13,21 @@
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   --bg:#e9eef2; --sheet:#f8fafb; --ink:#1b2530; --muted:#5d6b78; --rule:#cfd8df;
-  --mlb:#1f3f73; --nhl:#4a5a68; --nfl:#2f6b3b; --nba:#9a4a14; --ncaaf:#6b2d5c; --ncaab:#1f6f78; --live:#b3261e; --chip:#dde5eb;
+  --accent:#1f3f73; --live:#b3261e; --chip:#dde5eb;
+  --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#A32D2D; --ncaab-bg:#FAECE7; --ncaab-fg:#712B13; --ncaab-ic:#D85A30; --nba-bg:#F0997B; --nba-fg:#4A1B0C; --nba-ic:#993C1D; --ncaaf-bg:#E9D8C3; --ncaaf-fg:#5A3B1E; --ncaaf-ic:#A87B50; --nfl-bg:#7A5230; --nfl-fg:#F7EBDD; --nfl-ic:#6B4526; --nhl-bg:#E6F1FB; --nhl-fg:#0C447C; --nhl-ic:#185FA5;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
-    --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --nba:#f0a46a; --ncaaf:#d79ac6; --ncaab:#7fd0d8; --live:#ff7a6e; --chip:#26313b;
+    --accent:#7fa6e6; --live:#ff7a6e; --chip:#26313b;
+    --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#F09595; --ncaab-bg:#712B13; --ncaab-fg:#FAECE7; --ncaab-ic:#F0997B; --nba-bg:#4A1B0C; --nba-fg:#F5C4B3; --nba-ic:#D85A30; --ncaaf-bg:#7A5638; --ncaaf-fg:#F6EADC; --ncaaf-ic:#D9B48C; --nfl-bg:#4A3220; --nfl-fg:#EBD9C5; --nfl-ic:#B98A5E; --nhl-bg:#0C447C; --nhl-fg:#E6F1FB; --nhl-ic:#85B7EB;
   }
 }
 :root[data-theme="dark"]{
   --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
-  --mlb:#7fa6e6; --nhl:#a9b8c5; --nfl:#7cc28b; --nba:#f0a46a; --ncaaf:#d79ac6; --ncaab:#7fd0d8; --live:#ff7a6e; --chip:#26313b;
+  --accent:#7fa6e6; --live:#ff7a6e; --chip:#26313b;
+  --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#F09595; --ncaab-bg:#712B13; --ncaab-fg:#FAECE7; --ncaab-ic:#F0997B; --nba-bg:#4A1B0C; --nba-fg:#F5C4B3; --nba-ic:#D85A30; --ncaaf-bg:#7A5638; --ncaaf-fg:#F6EADC; --ncaaf-ic:#D9B48C; --nfl-bg:#4A3220; --nfl-fg:#EBD9C5; --nfl-ic:#B98A5E; --nhl-bg:#0C447C; --nhl-fg:#E6F1FB; --nhl-ic:#85B7EB;
 }
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Barlow,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45}
@@ -41,15 +44,22 @@ header p{margin:6px 0 0;color:var(--muted)}
 .controls{align-items:flex-end}
 button.chip{font:inherit;font-weight:600;font-size:.9rem;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);padding:6px 14px;border-radius:999px;cursor:pointer}
 button.chip[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
-button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
+button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sheet{background:var(--sheet);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
 .game{display:grid;grid-template-columns:78px 58px 1fr;gap:4px 14px;padding:14px 18px;border-top:1px solid var(--rule);align-items:start}
 .game:first-child{border-top:0}
 .time{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.35rem;line-height:1.1;font-variant-numeric:tabular-nums}
 .time small{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--live);margin-top:3px}
-.lg{font-weight:600;font-size:.78rem;padding:2px 0;text-align:center;border-radius:4px;color:var(--sheet);margin-top:3px}
-.lg.MLB{background:var(--mlb)} .lg.NHL{background:var(--nhl)} .lg.NFL{background:var(--nfl)}
-.lg.NBA{background:var(--nba)} .lg.NCAAF{background:var(--ncaaf)} .lg.NCAAB{background:var(--ncaab)}
+.lgc{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:3px}
+.lg{width:100%;font-weight:600;font-size:.78rem;padding:2px 0;text-align:center;border-radius:4px}
+.lgi{display:block;width:22px;height:22px}
+.lgi svg{width:100%;height:100%;display:block}
+.lg.MLB{background:var(--mlb-bg);color:var(--mlb-fg)} .lgi.MLB{color:var(--mlb-ic)}
+.lg.NCAAB{background:var(--ncaab-bg);color:var(--ncaab-fg)} .lgi.NCAAB{color:var(--ncaab-ic)}
+.lg.NBA{background:var(--nba-bg);color:var(--nba-fg)} .lgi.NBA{color:var(--nba-ic)}
+.lg.NCAAF{background:var(--ncaaf-bg);color:var(--ncaaf-fg)} .lgi.NCAAF{color:var(--ncaaf-ic)}
+.lg.NFL{background:var(--nfl-bg);color:var(--nfl-fg)} .lgi.NFL{color:var(--nfl-ic)}
+.lg.NHL{background:var(--nhl-bg);color:var(--nhl-fg)} .lgi.NHL{color:var(--nhl-ic)}
 .time .dl{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--muted);margin:0 0 2px;letter-spacing:.01em}
 .team .sc{font-family:Barlow,sans-serif;font-weight:600;font-size:.95rem;margin-left:8px;font-variant-numeric:tabular-nums}
 .teams{display:grid;grid-template-columns:44px minmax(0,1fr) repeat(4,80px);gap:2px 10px;align-items:baseline}
@@ -61,10 +71,10 @@ button.chip:focus-visible{outline:2px solid var(--mlb);outline-offset:2px}
 .team .p{font-family:Barlow,sans-serif;font-weight:400;font-size:.88rem;color:var(--muted);margin-left:6px}
 .note{grid-column:3;font-size:.82rem;color:var(--muted)}
 .game.past{opacity:.55}
-a.gd{color:var(--mlb);font-weight:600;text-decoration:none}
-button.pb{font:inherit;font-weight:600;color:var(--mlb);background:none;border:0;padding:0;cursor:pointer}
+a.gd{color:var(--accent);font-weight:600;text-decoration:none}
+button.pb{font:inherit;font-weight:600;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
 button.pb:hover{text-decoration:underline}
-button.pb:focus-visible{outline:2px solid var(--mlb);outline-offset:2px;border-radius:2px}
+button.pb:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 .props{grid-column:1 / -1;margin-top:10px;border-top:1px dashed var(--rule);padding-top:10px}
 .props[hidden]{display:none}
 .pcats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
@@ -88,18 +98,24 @@ table.pt td.bk{text-align:center;padding:4px 6px}
 :root[data-theme="dark"] .chip.best{background:#4a3f12;border-color:#8a7424}
 :root[data-theme="dark"] .chip.best span{color:#f1dfa0}
 a.gd:hover{text-decoration:underline}
-a.gd:focus-visible{outline:2px solid var(--mlb);outline-offset:2px;border-radius:2px}
+a.gd:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 .time small.final{color:var(--muted)}
 #days{margin-bottom:0}
 .empty{padding:28px 18px;color:var(--muted)}
 footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 @media (max-width:520px){
   .game{grid-template-columns:62px 1fr;padding:12px 14px}
-  .lg{grid-column:1;grid-row:2;width:44px}
+  .lgc{grid-column:1;grid-row:2;width:44px}
+  .lgi{width:18px;height:18px}
   .teams{grid-column:2;grid-row:1 / span 2}
   .note{grid-column:2}
   .team{font-size:1.08rem}
-  .teams{grid-template-columns:34px minmax(0,1fr) repeat(3,58px);gap:2px 6px}
+  .teams{grid-template-columns:34px repeat(3,minmax(0,1fr));gap:2px 8px}
+  .teams > div:nth-child(2){display:none}
+  .teams .rot{grid-row:span 2}
+  .teams .team{grid-column:2 / -1}
+  .teams .odd,.teams .oh{text-align:left}
+  .teams .odd{margin-bottom:6px}
   .open{display:none}
   .wrap{padding-left:12px;padding-right:12px}
   .fgrid{column-gap:3px}
@@ -149,6 +165,12 @@ const BOARD = __DATA__;
 let filter = "ALL", sort = "time", dayIdx = BOARD.start_tab || 0;
 const showScore = x => x.state!=="pre" && x.as!=null && x.hs!=null && x.as!=="" && x.hs!=="";
 const LINE = {MLB:"Run line", NHL:"Puck line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread", NCAAB:"Spread"};
+const SVG = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const BASEBALL = SVG('<path d="M5.636 18.364a9 9 0 1 0 12.728 -12.728a9 9 0 0 0 -12.728 12.728"/><path d="M12.495 3.02a9 9 0 0 1 -9.475 9.475"/><path d="M20.98 11.505a9 9 0 0 0 -9.475 9.475"/><path d="M9 9l2 2"/><path d="M13 13l2 2"/><path d="M11 7l2 1"/><path d="M7 11l1 2"/><path d="M16 11l1 2"/><path d="M11 16l2 1"/>');
+const BASKETBALL = SVG('<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.65 5.65l12.7 12.7"/><path d="M5.65 18.35l12.7 -12.7"/><path d="M12 3a9 9 0 0 0 9 9"/><path d="M3 12a9 9 0 0 1 9 9"/>');
+const FOOTBALL = SVG('<path d="M15 9l-6 6"/><path d="M10 12l2 2"/><path d="M12 10l2 2"/><path d="M8 21a5 5 0 0 0 -5 -5"/><path d="M16 3c-7.18 0 -13 5.82 -13 13a5 5 0 0 0 5 5c7.18 0 13 -5.82 13 -13a5 5 0 0 0 -5 -5"/><path d="M16 3a5 5 0 0 0 5 5"/>');
+const HOCKEY = SVG('<path d="M14 3 8 17.5a2 2 0 0 1-1.8 1.2H3"/><ellipse cx="17" cy="18.5" rx="4" ry="1.8"/>');
+const ICONS = {MLB:BASEBALL, NCAAB:BASKETBALL, NBA:BASKETBALL, NCAAF:FOOTBALL, NFL:FOOTBALL, NHL:HOCKEY};
 const GROUPS = {BASKETBALL:["NCAAB","NBA"], FOOTBALL:["NCAAF","NFL"]};
 const inFilter = x => filter==="ALL" || x.lg===filter || (GROUPS[filter]||[]).includes(x.lg);
 const openProps = new Set(), propCat = {};
@@ -216,7 +238,7 @@ function render(){
                    : x.state==="post" ? `<small class="final">${esc(x.detail||"Final")}</small>` : "";
       return `<div class="game${x.state==="post"?" past":""}">
         <div class="time">${x.dl?`<span class="dl">${esc(x.dl)}</span>`:""}${esc(x.time)}${status}</div>
-        <div class="lg ${x.lg}">${x.lg}</div>
+        <div class="lgc"><div class="lg ${x.lg}">${x.lg}</div><span class="lgi ${x.lg}" aria-hidden="true">${ICONS[x.lg]||""}</span></div>
         <div class="teams">
           <div></div><div></div>
           <div class="oh open">Open</div><div class="oh">Money</div><div class="oh">Total</div><div class="oh">${LINE[x.lg]||"Line"}</div>
