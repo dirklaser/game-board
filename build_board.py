@@ -153,13 +153,59 @@ def nhl_games(day):
             gs = g.get("gameState", "FUT")
             state = "post" if gs in ("FINAL", "OFF") else "in" if gs in ("LIVE", "CRIT") else "pre"
             detail = "Final" if state == "post" else "Live" if state == "in" else ""
-            games.append({"start": start, "away": side["away"], "home": side["home"],
+            games.append({"id": g.get("id"), "start": start, "away": side["away"], "home": side["home"],
                           "state": state, "detail": detail,
                           "neutral": bool(g.get("neutralSite")),
                           "city": (g.get("venue") or {}).get("default"),
                           "week": None,
                           "extra": "Preseason" if g.get("gameType") == 1 else None})
+    if any(x["state"] != "pre" for x in games):
+        try:
+            nhl_add_clock(day, games)
+        except Exception as e:
+            print(f"  [NHL {day}] scoreboard clock failed: {e!r}")
     return games
+
+
+def _ordinal(n):
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
+
+
+def nhl_period_label(pd):
+    ptype = (pd or {}).get("periodType", "REG")
+    num = (pd or {}).get("number") or 0
+    if ptype == "SO":
+        return "SO"
+    if ptype == "OT":
+        ot = num - 3
+        return "OT" if ot <= 1 else f"{ot}OT"
+    return _ordinal(num) if num else ""
+
+
+def nhl_add_clock(day, games):
+    """Scoreboard clock for NHL games (period, time left, intermission), like ESPN's
+    '12:34 - 2nd'. The schedule feed only says the game is live."""
+    data = get(f"https://api-web.nhle.com/v1/score/{day.isoformat()}", plain=True).json()
+    by_id = {g.get("id"): g for g in data.get("games", [])}
+    for x in games:
+        g = by_id.get(x.get("id"))
+        if not g:
+            continue
+        per = nhl_period_label(g.get("periodDescriptor"))
+        clock = g.get("clock") or {}
+        if x["state"] == "in":
+            if clock.get("inIntermission"):
+                x["detail"] = f"End {per}" if per else "Intermission"
+            elif per == "SO":
+                x["detail"] = "Shootout"
+            elif clock.get("timeRemaining"):
+                x["detail"] = f"{clock['timeRemaining']} - {per}" if per else clock["timeRemaining"]
+        elif x["state"] == "post" and (per == "SO" or per.endswith("OT")):
+            x["detail"] = f"Final/{per}"
+        for k in ("away", "home"):
+            sc = (g.get(f"{k}Team") or {}).get("score")
+            if sc is not None:
+                x[k]["score"] = sc
 
 
 def nfl_week_range(d):
