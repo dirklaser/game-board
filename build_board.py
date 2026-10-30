@@ -265,6 +265,26 @@ def espn_day(label, day):
     raise last
 
 
+def college_rank(c):
+    """AP/CFP-style ranking from ESPN (99 means unranked)."""
+    try:
+        r = int((c.get("curatedRank") or {}).get("current") or 99)
+    except (TypeError, ValueError):
+        return None
+    return r if 1 <= r <= 25 else None
+
+
+def copy_text(label, g, weekly):
+    """Plain text for the copy button, e.g. 'Wisconsin Badgers (25) @ Iowa Hawkeyes - Week 9'."""
+    def name(side):
+        t = g[side]
+        return f"{t['full']} ({t['rank']})" if t.get("rank") else t["full"]
+    text = f"{name('away')} @ {name('home')}"
+    if weekly and g.get("week") is not None:
+        text += f" - Week {g['week']}"
+    return text
+
+
 def espn_games(label, start_day, end_day):
     """Games from ESPN between two dates (inclusive), requested one day at a time."""
     wk = week_number(label, start_day) if MODE[label] == "weekly" else None
@@ -292,7 +312,8 @@ def espn_games(label, start_day, end_day):
                                                "nick": t.get("name") or "", "pitcher": None,
                                                "abbr": t.get("abbreviation", ""),
                                                "loc": t.get("location", ""),
-                                               "score": c.get("score")}
+                                               "score": c.get("score"),
+                                               "rank": college_rank(c)}
                 if "home" not in side or "away" not in side:
                     continue
                 seen.add(ev.get("id"))
@@ -557,6 +578,8 @@ def game_row(label, sao_path, g, weekly):
         "dl": g["start"].strftime("%a %-m/%-d") if weekly else None,
         "ar": g.get("away_rot"), "hr": g.get("home_rot"),
         "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
+        "ac": g.get("away_close"), "hc": g.get("home_close"),
+        "cp": copy_text(label, g, weekly),
         "as": g["away"].get("score"), "hs": g["home"].get("score"),
         "url": g.get("url"),
         "day_url": f"https://www.scoresandodds.com/{sao_path}?date={g['start'].date().isoformat()}",
@@ -570,6 +593,85 @@ def game_row(label, sao_path, g, weekly):
             f"Neutral site: {g['city']}" if g["neutral"] and g["city"] else None,
         ])),
     }
+
+
+# ---------------------------------------------------------------- closing lines
+# scoresandodds drops the "Open" column once a game starts and switches to live odds, and
+# never shows a closing line. Each run publishes lines.json (the last pregame line seen for
+# every game); the next run reads it back, so started games can show their closing line.
+
+import os
+
+LINES_KEEP_DAYS = 10
+PREV_LINES = {}
+NEW_LINES = {}
+
+
+def lines_url():
+    repo = os.environ.get("GITHUB_REPOSITORY", "dirklaser/game-board")
+    owner, _, name = repo.partition("/")
+    return f"https://{owner.lower()}.github.io/{name}/lines.json"
+
+
+def load_prev_lines():
+    try:
+        data = get(lines_url(), plain=True, params={"t": int(datetime.now().timestamp())}).json()
+        PREV_LINES.update(data.get("games", {}))
+        print(f"[lines] loaded {len(PREV_LINES)} remembered lines")
+    except Exception as e:
+        print(f"[lines] no remembered lines yet ({e!r})")
+
+
+def line_key(label, g):
+    return f"{label}|{g['start'].date().isoformat()}|{g['away']['full']}|{g['home']['full']}"
+
+
+def market_of(text):
+    """Which market an Open cell shows: total ('o8.5 -110'), spread ('-1.5 +130') or ML ('-146')."""
+    t = (text or "").strip()
+    if not t:
+        return None
+    if t[0] in "ou" and t[1:2].replace(".", "").isdigit():
+        return "tot"
+    return "line" if len(t.split()) >= 2 else "ml"
+
+
+def apply_closing_lines(label, games):
+    """Remember pregame lines; give started games the last pregame line seen."""
+    filled = 0
+    for g in games:
+        key = line_key(label, g)
+        ao, ho = g.get("away_odds") or {}, g.get("home_odds") or {}
+        has_lines = any(ao.get(k) or ho.get(k) for k in ("ml", "tot", "line"))
+        prev = PREV_LINES.get(key) or {}
+        if g["state"] == "pre":
+            if has_lines:
+                NEW_LINES[key] = {"ao": ao, "ho": ho}
+            elif prev:
+                NEW_LINES[key] = prev
+            continue
+        if not prev:
+            continue
+        NEW_LINES[key] = prev          # keep it for the Yesterday / Last week tab
+        pa, ph = prev.get("ao") or {}, prev.get("ho") or {}
+        for side, odds, default in (("away", pa, "tot"), ("home", ph, "ml")):
+            mk = market_of(odds.get("open")) or default
+            val = odds.get(mk) or odds.get(default)
+            if val:
+                g[f"{side}_close"] = val
+        if g.get("away_close") or g.get("home_close"):
+            filled += 1
+    return filled
+
+
+def save_lines(today):
+    cutoff = (today - timedelta(days=LINES_KEEP_DAYS)).isoformat()
+    keep = {k: v for k, v in NEW_LINES.items() if k.split("|")[1] >= cutoff}
+    for k, v in PREV_LINES.items():          # games no longer on any tab, still recent
+        if k not in keep and k.split("|")[1] >= cutoff:
+            keep[k] = v
+    Path("site/lines.json").write_text(json.dumps({"games": keep}), encoding="utf-8")
+    print(f"[lines] saved {len(keep)} lines")
 
 
 def build_view(key, title, anchor_day, weekly_anchor, props_by_league, notes):
@@ -602,6 +704,12 @@ def build_view(key, title, anchor_day, weekly_anchor, props_by_league, notes):
                   f"{matched} matched, {with_odds} with odds")
         except Exception as e:
             print(f"[{tag}] scoresandodds failed: {e}")
+        try:
+            closed = apply_closing_lines(label, games)
+            if closed:
+                print(f"[{tag}] closing lines shown for {closed} started games")
+        except Exception as e:
+            print(f"[{tag}] closing lines failed: {e!r}")
         if props_by_league.get(label):
             attach_props(label, games, props_by_league[label])
         rows.extend(game_row(label, sao_path, g, weekly) for g in games)
@@ -615,6 +723,7 @@ def build():
     now = datetime.now(TZ)
     today = now.date()
     notes = []
+    load_prev_lines()
     try:
         todays_props = load_props()
     except Exception as e:
@@ -642,6 +751,10 @@ def build():
     page = template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/"))
     Path("site").mkdir(exist_ok=True)
     Path("site/index.html").write_text(page, encoding="utf-8")
+    try:
+        save_lines(today)
+    except Exception as e:
+        print(f"[lines] save failed: {e!r}")
     total = len(current["games"]) + len(previous["games"])
     print(f"Wrote site/index.html with {total} games at {payload['updated']}")
 
