@@ -31,7 +31,7 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 }
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Barlow,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45}
-.wrap{max-width:860px;margin:0 auto;padding:28px 16px 48px}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 48px}
 header h1{font-family:"Barlow Condensed","Arial Narrow",Arial,sans-serif;font-weight:700;font-size:clamp(2.2rem,6vw,3.4rem);line-height:1;margin:0;letter-spacing:-.01em}
 header p{margin:6px 0 0;color:var(--muted)}
 .controls{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 14px;align-items:center}
@@ -63,9 +63,12 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .time .dl{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--muted);margin:0 0 2px;letter-spacing:.01em}
 .team .sc{font-family:Barlow,sans-serif;font-weight:600;font-size:.95rem;margin-left:8px;font-variant-numeric:tabular-nums}
 .teams{display:grid;grid-template-columns:44px minmax(0,1fr) repeat(4,80px);gap:2px 10px;align-items:baseline}
+.teams.five{grid-template-columns:44px minmax(0,1fr) repeat(5,84px);column-gap:8px}
+.odd.stk{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;font-size:.85rem}
+.odd.stk span + span{color:var(--muted)}
 .open{color:var(--muted)}
 .oh.live{color:var(--live)}
-.odd small.cl{display:block;font-size:.72rem;color:var(--muted);margin-top:1px;white-space:nowrap}
+
 .stale{margin:14px 0 0;padding:10px 14px;border:1px solid var(--live);border-radius:8px;color:var(--live);font-size:.9rem;font-weight:500}
 .stale[hidden]{display:none}
 .oh{font-size:.7rem;font-weight:600;color:var(--muted);text-align:right}
@@ -121,6 +124,8 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
   .note{grid-column:2}
   .team{font-size:1.08rem}
   .teams{grid-template-columns:34px repeat(3,minmax(0,1fr));gap:2px 8px}
+  .teams.five{grid-template-columns:34px repeat(3,minmax(0,1fr))}
+  .odd.stk{display:none}
   .teams > div:nth-child(2){display:none}
   .teams .rot{grid-row:span 2}
   .teams .team{grid-column:2 / -1}
@@ -175,7 +180,7 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 const BOARD = __DATA__;
 let filter = "ALL", sort = "time", dayIdx = BOARD.start_tab || 0;
 const showScore = x => x.state!=="pre" && x.as!=null && x.hs!=null && x.as!=="" && x.hs!=="";
-const LINE = {MLB:"Run line", NHL:"Puck line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread", NCAAB:"Spread"};
+const LINE = {MLB:"Run Line", NHL:"Puck Line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread", NCAAB:"Spread"};
 const SVG = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const BASEBALL = SVG('<path d="M5.636 18.364a9 9 0 1 0 12.728 -12.728a9 9 0 0 0 -12.728 12.728"/><path d="M12.495 3.02a9 9 0 0 1 -9.475 9.475"/><path d="M20.98 11.505a9 9 0 0 0 -9.475 9.475"/><path d="M9 9l2 2"/><path d="M13 13l2 2"/><path d="M11 7l2 1"/><path d="M7 11l1 2"/><path d="M16 11l1 2"/><path d="M11 16l2 1"/>');
 const BASKETBALL = SVG('<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.65 5.65l12.7 12.7"/><path d="M5.65 18.35l12.7 -12.7"/><path d="M12 3a9 9 0 0 0 9 9"/><path d="M3 12a9 9 0 0 1 9 9"/>');
@@ -248,13 +253,23 @@ document.addEventListener("click", e=>{
   }
 });
 const hasClose = x => x.state!=="pre" && Object.keys(x.aco||{}).length + Object.keys(x.hco||{}).length > 0;
-const odds = (o, co, x) => ["open","ml","tot","line"].map(k=>{
-  const live = (o||{})[k], close = (co||{})[k];
-  if(k==="open") return `<div class="odd open">${esc((o||{}).open || close || "—")}</div>`;
-  if(x.state==="post" && hasClose(x)) return `<div class="odd">${esc(close||"—")}</div>`;
-  if(x.state==="in" && hasClose(x)) return `<div class="odd">${esc(live||"—")}<small class="cl">C: ${esc(close||"—")}</small></div>`;
-  return `<div class="odd">${esc(live||"—")}</div>`;
-}).join("");
+const stack = v => { const [s,tt] = v||[]; return `<div class="odd open stk"><span>${esc(s||"—")}</span><span>${esc(tt||"—")}</span></div>`; };
+const odds = (o, co, x, op, cl) => {
+  const live = k => (o||{})[k], close = k => (co||{})[k];
+  let cells = stack(op);                                  // Open: side over total
+  if(x.state==="in") cells += stack(cl);                  // Close: side over total
+  for(const k of ["ml","tot","line"]){
+    const v = (x.state==="post" && hasClose(x)) ? close(k) : live(k);
+    cells += `<div class="odd">${esc(v||"—")}</div>`;
+  }
+  return cells;
+};
+const lineName = x => LINE[x.lg] || "Line";
+const heads = x => x.state==="in"
+  ? `<div class="oh open">Open</div><div class="oh open">Close</div><div class="oh live">Live ML</div><div class="oh live">Live Total</div><div class="oh live">Live ${lineName(x)}</div>`
+  : x.state==="post" && hasClose(x)
+  ? `<div class="oh open">Open</div><div class="oh">Close ML</div><div class="oh">Close Total</div><div class="oh">Close ${lineName(x)}</div>`
+  : `<div class="oh open">Open</div><div class="oh">Money</div><div class="oh">Total</div><div class="oh">${lineName(x)}</div>`;
 const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function render(){
@@ -274,19 +289,15 @@ function render(){
       return `<div class="game${x.state==="post"?" past":""}">
         <div class="time">${x.dl?`<span class="dl">${esc(x.dl)}</span>`:""}${esc(x.time)}${status}</div>
         <div class="lgc"><div class="lg ${x.lg}">${x.lg}</div><span class="lgi ${x.lg}" aria-hidden="true">${ICONS[x.lg]||""}</span></div>
-        <div class="teams">
+        <div class="teams${x.state==="in"?" five":""}">
           <div></div><div></div>
-          <div class="oh open">Open</div>${x.state==="in"
-            ? `<div class="oh live">Live ML</div><div class="oh live">Live total</div><div class="oh live">Live ${(LINE[x.lg]||"line").toLowerCase()}</div>`
-            : x.state==="post" && hasClose(x)
-            ? `<div class="oh">Close ML</div><div class="oh">Close total</div><div class="oh">Close ${(LINE[x.lg]||"line").toLowerCase()}</div>`
-            : `<div class="oh">Money</div><div class="oh">Total</div><div class="oh">${LINE[x.lg]||"Line"}</div>`}
+          ${heads(x)}
           <div class="rot">${x.ar ?? "—"}</div>
           <div class="team">${esc(x.a)}${showScore(x)?`<span class="sc">${esc(x.as)}</span>`:""}${x.ap?`<span class="p">${esc(x.ap)}</span>`:""}</div>
-          ${odds(x.ao, x.aco, x)}
+          ${odds(x.ao, x.aco, x, x.aop, x.acl)}
           <div class="rot">${x.hr ?? "—"}</div>
           <div class="team">@ ${esc(x.h)}${showScore(x)?`<span class="sc">${esc(x.hs)}</span>`:""}${x.hp?`<span class="p">${esc(x.hp)}</span>`:""}</div>
-          ${odds(x.ho, x.hco, x)}
+          ${odds(x.ho, x.hco, x, x.hop, x.hcl)}
         </div>
         <div class="note"><span class="nl">${x.note?esc(x.note)+" · ":""}<a class="gd" href="${esc(x.day_url||x.url)}" target="_blank" rel="noopener">Game details</a>${x.url?` · <a class="gd" href="${esc(x.url)}" target="_blank" rel="noopener">Matchup</a>`:""}${propCount(x)?` · <button class="pb" data-g="${x._i}" aria-expanded="${openProps.has(x._i)}">Props (${propCount(x)})</button>`:""}</span>${x.cp?`<button class="cp" data-cp="${esc(x.cp)}" title="Copy">${COPY_ICON}<span>${esc(x.cp)}</span></button>`:""}</div>
         <div class="props" id="props-${x._i}" ${openProps.has(x._i)?"":"hidden"}>${openProps.has(x._i)?propsPanel(x):""}</div>

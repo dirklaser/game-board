@@ -601,6 +601,8 @@ def game_row(label, sao_path, g, weekly):
         "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
         "ac": g.get("away_close"), "hc": g.get("home_close"),
         "aco": g.get("away_closeodds") or {}, "hco": g.get("home_closeodds") or {},
+        "aop": g.get("away_openfull"), "hop": g.get("home_openfull"),
+        "acl": g.get("away_closefull"), "hcl": g.get("home_closefull"),
         "cp": copy_text(label, g, weekly),
         "as": g["away"].get("score"), "hs": g["home"].get("score"),
         "url": g.get("url"),
@@ -658,32 +660,98 @@ def market_of(text):
     return "line" if len(t.split()) >= 2 else "ml"
 
 
+SIDE_MARKET = {"MLB": "ml", "NHL": "ml", "NBA": "line", "NCAAB": "line", "NFL": "line", "NCAAF": "line"}
+
+
+def _num(text):
+    return (text or "").split()[0] if text else ""
+
+
+def mirror_total(text):
+    """'o47.5 -110' -> 'u47.5' (the other side's number; price unknown)."""
+    n = _num(text)
+    if not n or n[0] not in "ou":
+        return None
+    return ("u" if n[0] == "o" else "o") + n[1:]
+
+
+def mirror_spread(text):
+    """'-6.5 -110' -> '+6.5' (the other side's number; price unknown)."""
+    n = _num(text)
+    if not n:
+        return None
+    if n.lower() in ("pk", "pick", "0", "+0", "-0"):
+        return "PK"
+    if n[0] in "+-":
+        return ("+" if n[0] == "-" else "-") + n[1:]
+    return None
+
+
+def with_price(number, first_val):
+    """Use the first-seen line's price when its number matches the mirrored number."""
+    if number and first_val and _num(first_val).lower() == number.lower():
+        return first_val
+    return number
+
+
+def full_open(label, g, first):
+    """Opening side + total for both teams. scoresandodds shows one opening number per team
+    (the favorite's line on one row, the total on the other); the rest is mirrored from it,
+    or taken from the first line the board ever saw for this game."""
+    side_mk = SIDE_MARKET.get(label, "line")
+    opens = {"away": (g.get("away_odds") or {}).get("open") or (g.get("away_closeodds") or {}).get("open"),
+             "home": (g.get("home_odds") or {}).get("open") or (g.get("home_closeodds") or {}).get("open")}
+    first = first or {}
+    out = {}
+    for side, other in (("away", "home"), ("home", "away")):
+        own, oth = opens[side], opens[other]
+        fs = first.get("ao" if side == "away" else "ho") or {}
+        # side (spread or moneyline)
+        if market_of(own) == side_mk:
+            sv = own
+        elif side_mk == "line" and market_of(oth) == "line":
+            sv = with_price(mirror_spread(oth), fs.get("line"))
+        else:
+            sv = fs.get(side_mk)
+        # total
+        if market_of(own) == "tot":
+            tv = own
+        elif market_of(oth) == "tot":
+            mt = mirror_total(oth)
+            tv = with_price(mt, fs.get("tot"))
+        else:
+            tv = fs.get("tot")
+        out[side] = [sv, tv]
+    return out
+
+
 def apply_closing_lines(label, games):
-    """Remember pregame lines; give started games the last pregame line seen."""
+    """Remember pregame lines (plus the first line ever seen); give started games their
+    full closing line, and every game a full opening line for both teams."""
     filled = 0
+    side_mk = SIDE_MARKET.get(label, "line")
     for g in games:
         key = line_key(label, g)
         ao, ho = g.get("away_odds") or {}, g.get("home_odds") or {}
         has_lines = any(ao.get(k) or ho.get(k) for k in ("ml", "tot", "line"))
         prev = PREV_LINES.get(key) or {}
+        first = prev.get("first")
         if g["state"] == "pre":
             if has_lines:
-                NEW_LINES[key] = {"ao": ao, "ho": ho}
+                first = first or {"ao": ao, "ho": ho}
+                NEW_LINES[key] = {"ao": ao, "ho": ho, "first": first}
             elif prev:
-                NEW_LINES[key] = prev
-            continue
-        if not prev:
-            continue
-        NEW_LINES[key] = prev          # keep it for the Yesterday / Last week tab
-        pa, ph = prev.get("ao") or {}, prev.get("ho") or {}
-        g["away_closeodds"], g["home_closeodds"] = pa, ph   # full closing line, both sides
-        for side, odds, default in (("away", pa, "tot"), ("home", ph, "ml")):
-            mk = market_of(odds.get("open")) or default
-            val = odds.get(mk) or odds.get(default)
-            if val:
-                g[f"{side}_close"] = val
-        if g.get("away_close") or g.get("home_close"):
-            filled += 1
+                NEW_LINES.setdefault(key, prev)
+        elif prev:
+            NEW_LINES.setdefault(key, prev)   # keep it for the Yesterday / Last week tab
+            pa, ph = prev.get("ao") or {}, prev.get("ho") or {}
+            g["away_closeodds"], g["home_closeodds"] = pa, ph
+            g["away_closefull"] = [pa.get(side_mk), pa.get("tot")]
+            g["home_closefull"] = [ph.get(side_mk), ph.get("tot")]
+            if any(g["away_closefull"] + g["home_closefull"]):
+                filled += 1
+        op = full_open(label, g, first)
+        g["away_openfull"], g["home_openfull"] = op["away"], op["home"]
     return filled
 
 
