@@ -600,6 +600,7 @@ def game_row(label, sao_path, g, weekly):
         "ar": g.get("away_rot"), "hr": g.get("home_rot"),
         "ao": g.get("away_odds") or {}, "ho": g.get("home_odds") or {},
         "ac": g.get("away_close"), "hc": g.get("home_close"),
+        "aco": g.get("away_closeodds") or {}, "hco": g.get("home_closeodds") or {},
         "cp": copy_text(label, g, weekly),
         "as": g["away"].get("score"), "hs": g["home"].get("score"),
         "url": g.get("url"),
@@ -675,6 +676,7 @@ def apply_closing_lines(label, games):
             continue
         NEW_LINES[key] = prev          # keep it for the Yesterday / Last week tab
         pa, ph = prev.get("ao") or {}, prev.get("ho") or {}
+        g["away_closeodds"], g["home_closeodds"] = pa, ph   # full closing line, both sides
         for side, odds, default in (("away", pa, "tot"), ("home", ph, "ml")):
             mk = market_of(odds.get("open")) or default
             val = odds.get(mk) or odds.get(default)

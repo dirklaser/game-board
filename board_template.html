@@ -65,6 +65,7 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .teams{display:grid;grid-template-columns:44px minmax(0,1fr) repeat(4,80px);gap:2px 10px;align-items:baseline}
 .open{color:var(--muted)}
 .oh.live{color:var(--live)}
+.odd small.cl{display:block;font-size:.72rem;color:var(--muted);margin-top:1px;white-space:nowrap}
 .stale{margin:14px 0 0;padding:10px 14px;border:1px solid var(--live);border-radius:8px;color:var(--live);font-size:.9rem;font-weight:500}
 .stale[hidden]{display:none}
 .oh{font-size:.7rem;font-weight:600;color:var(--muted);text-align:right}
@@ -246,10 +247,13 @@ document.addEventListener("click", e=>{
     document.getElementById("props-"+pc.dataset.g).innerHTML = propsPanel(findGame(pc.dataset.g));
   }
 });
-const useClose = x => x.state!=="pre" && (x.ac || x.hc);
-const odds = (o, close, x) => ["open","ml","tot","line"].map(k=>{
-  const v = k==="open" ? (useClose(x) ? close : (o||{}).open) : (o||{})[k];
-  return `<div class="odd${k==="open"?" open":""}">${esc(v||"—")}</div>`;
+const hasClose = x => x.state!=="pre" && Object.keys(x.aco||{}).length + Object.keys(x.hco||{}).length > 0;
+const odds = (o, co, x) => ["open","ml","tot","line"].map(k=>{
+  const live = (o||{})[k], close = (co||{})[k];
+  if(k==="open") return `<div class="odd open">${esc((o||{}).open || close || "—")}</div>`;
+  if(x.state==="post" && hasClose(x)) return `<div class="odd">${esc(close||"—")}</div>`;
+  if(x.state==="in" && hasClose(x)) return `<div class="odd">${esc(live||"—")}<small class="cl">C: ${esc(close||"—")}</small></div>`;
+  return `<div class="odd">${esc(live||"—")}</div>`;
 }).join("");
 const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -272,15 +276,17 @@ function render(){
         <div class="lgc"><div class="lg ${x.lg}">${x.lg}</div><span class="lgi ${x.lg}" aria-hidden="true">${ICONS[x.lg]||""}</span></div>
         <div class="teams">
           <div></div><div></div>
-          <div class="oh open">${useClose(x)?"Close":"Open"}</div>${x.state==="in"
+          <div class="oh open">Open</div>${x.state==="in"
             ? `<div class="oh live">Live ML</div><div class="oh live">Live total</div><div class="oh live">Live ${(LINE[x.lg]||"line").toLowerCase()}</div>`
+            : x.state==="post" && hasClose(x)
+            ? `<div class="oh">Close ML</div><div class="oh">Close total</div><div class="oh">Close ${(LINE[x.lg]||"line").toLowerCase()}</div>`
             : `<div class="oh">Money</div><div class="oh">Total</div><div class="oh">${LINE[x.lg]||"Line"}</div>`}
           <div class="rot">${x.ar ?? "—"}</div>
           <div class="team">${esc(x.a)}${showScore(x)?`<span class="sc">${esc(x.as)}</span>`:""}${x.ap?`<span class="p">${esc(x.ap)}</span>`:""}</div>
-          ${odds(x.ao, x.ac, x)}
+          ${odds(x.ao, x.aco, x)}
           <div class="rot">${x.hr ?? "—"}</div>
           <div class="team">@ ${esc(x.h)}${showScore(x)?`<span class="sc">${esc(x.hs)}</span>`:""}${x.hp?`<span class="p">${esc(x.hp)}</span>`:""}</div>
-          ${odds(x.ho, x.hc, x)}
+          ${odds(x.ho, x.hco, x)}
         </div>
         <div class="note"><span class="nl">${x.note?esc(x.note)+" · ":""}<a class="gd" href="${esc(x.day_url||x.url)}" target="_blank" rel="noopener">Game details</a>${x.url?` · <a class="gd" href="${esc(x.url)}" target="_blank" rel="noopener">Matchup</a>`:""}${propCount(x)?` · <button class="pb" data-g="${x._i}" aria-expanded="${openProps.has(x._i)}">Props (${propCount(x)})</button>`:""}</span>${x.cp?`<button class="cp" data-cp="${esc(x.cp)}" title="Copy">${COPY_ICON}<span>${esc(x.cp)}</span></button>`:""}</div>
         <div class="props" id="props-${x._i}" ${openProps.has(x._i)?"":"hidden"}>${openProps.has(x._i)?propsPanel(x):""}</div>
