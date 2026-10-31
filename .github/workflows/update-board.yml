@@ -2,8 +2,8 @@ name: Update game board
 
 on:
   schedule:
-    # Every 15 minutes from about 10 AM to midnight Central (times are UTC)
-    - cron: "*/15 15-23,0-5 * * *"
+    # Every 5 minutes from about 9-10 AM to midnight Central (times are UTC)
+    - cron: "*/5 15-23,0-5 * * *"
   workflow_dispatch:   # adds a "Run workflow" button for manual updates
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false   # let a running update finish; the newest waiting one runs next
 
 jobs:
   build-and-publish:
@@ -30,7 +30,7 @@ jobs:
       - run: pip install requests beautifulsoup4 playwright
       - run: python -m playwright install --with-deps chromium
       - run: python -u build_board.py
-        timeout-minutes: 10
+        timeout-minutes: 6
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
