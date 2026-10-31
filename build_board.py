@@ -480,23 +480,36 @@ BOOK_NAMES = {"riverscasino": "BetRivers", "betrivers": "BetRivers", "fanduel": 
               "espnbet": "ESPN BET", "borgata": "Borgata"}
 
 
+import time as _time
+RUN_START = _time.time()
+COMPARE_BUDGET_SECONDS = 75        # total time for bet365/FanDuel/DraftKings prop prices
+COMPARE_WINDOW_HOURS = 30          # only compare props for games starting within this window
+PROPS_BROWSER_OK = {"MLB", "NBA", "NHL", "NFL"}   # leagues worth the slow browser fallback
+COMPARE_DEADLINE = None
+
+
+def elapsed():
+    return f"{_time.time() - RUN_START:.0f}s"
+
+
 def load_props():
     """Returns {league_label: [rows]} for today's props, direct first, browser if needed."""
     out, need_browser = {}, []
     for label, sao_path in LEAGUES:
+        blocked = False
         try:
             rows, ncats = props.fetch_direct(get, sao_path)
             print(f"[props {label}] direct: {ncats} categories, {len(rows)} props")
         except Exception as e:
-            rows = []
+            rows, blocked = [], True
             print(f"[props {label}] direct failed: {e!r}")
         if rows:
             out[label] = rows
-        else:
-            need_browser.append((label, sao_path))
+        elif blocked and label in PROPS_BROWSER_OK:
+            need_browser.append((label, sao_path))   # only if scoresandodds refused us
     if need_browser:
         try:
-            got = props.fetch_browser([sp for _, sp in need_browser])
+            got = props.fetch_browser([sp for _, sp in need_browser], per_league_seconds=40)
             for label, sp in need_browser:
                 out[label] = got.get(sp, [])
                 print(f"[props {label}] browser: {len(out[label])} props")
@@ -520,9 +533,15 @@ def attach_props(label, games, rows):
             continue
         matched.append((g, r))
     try:
-        filled, reqs = props.add_comparisons(get, [r for _, r in matched])
-        print(f"[props {label}] sportsbook comparison: {filled} of {len(matched)} props "
-              f"({reqs} game/category groups)")
+        global COMPARE_DEADLINE
+        if COMPARE_DEADLINE is None:
+            COMPARE_DEADLINE = _time.time() + COMPARE_BUDGET_SECONDS
+        now = datetime.now(TZ)
+        soon = [r for g, r in matched
+                if g["state"] == "pre" and g["start"] - now < timedelta(hours=COMPARE_WINDOW_HOURS)]
+        filled, reqs = props.add_comparisons(get, soon, deadline=COMPARE_DEADLINE)
+        print(f"[props {label}] sportsbook comparison: {filled} of {len(soon)} upcoming props "
+              f"({reqs} game/category groups) at {elapsed()}")
     except Exception as e:
         print(f"[props {label}] sportsbook comparison failed: {e!r}")
     for g, r in matched:
@@ -730,7 +749,9 @@ def build():
         print(f"[props] failed: {e!r}")
         todays_props = {}
 
+    print(f"[timing] props loaded at {elapsed()}")
     current = build_view("current", "Today / This week", today, today, todays_props, notes)
+    print(f"[timing] current view built at {elapsed()}")
     previous = build_view("previous", "Yesterday / Last week", today - timedelta(days=1),
                           today - timedelta(days=7), {}, notes)
     # "Today": every league, today's games only (taken from the current view)
@@ -743,7 +764,8 @@ def build():
     views = [previous, today_only, current]
     payload = {
         "start_tab": 1,   # open on "Today"
-        "updated": now.strftime("%-I:%M %p CDT, %a %-m/%-d"),
+        "updated": now.strftime("%-I:%M %p %Z, %a %-m/%-d"),
+        "updated_iso": now.isoformat(),
         "days": views,
         "notes": sorted(set(notes)),
     }
@@ -756,7 +778,7 @@ def build():
     except Exception as e:
         print(f"[lines] save failed: {e!r}")
     total = len(current["games"]) + len(previous["games"])
-    print(f"Wrote site/index.html with {total} games at {payload['updated']}")
+    print(f"Wrote site/index.html with {total} games at {payload['updated']} (run took {elapsed()})")
 
 
 if __name__ == "__main__":

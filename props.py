@@ -196,7 +196,7 @@ def best_books(books):
     return bo, bu
 
 
-def add_comparisons(get, rows, workers=8):
+def add_comparisons(get, rows, workers=8, deadline=None):
     """Fill row["books"] for rows. One request per game+category; falls back to
     per-player requests if the feed only returns the filtered player."""
     import time as _t
@@ -220,6 +220,8 @@ def add_comparisons(get, rows, workers=8):
             return None
 
     def do_group(key):
+        if deadline and _t.time() > deadline:
+            return 0
         event, market = key
         members = groups[key]
         found = call(event, market)
@@ -231,7 +233,9 @@ def add_comparisons(get, rows, workers=8):
                     by_id[pid] = m
         missing = [r for r in members if r.get("pid") not in by_id]
         if missing and len(by_id) <= 1:
-            for r in missing[:40]:  # feed needs one request per player
+            for r in missing[:15]:  # feed needs one request per player
+                if deadline and _t.time() > deadline:
+                    break
                 one = call(event, market, r["player"])
                 for m in one or []:
                     pid = (m.get("player") or {}).get("id")
