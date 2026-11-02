@@ -274,7 +274,7 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;","
 
 function render(){
   const day = BOARD.days[dayIdx] || {games:[],long:""};
-  document.getElementById("dateline").textContent = day.long + " · all times CDT";
+  document.getElementById("dateline").textContent = day.long + " · all times " + (BOARD.tz || "CT");
   let g = day.games.filter(inFilter);
   g.sort(sort==="time"
     ? (a,b)=> a.t.localeCompare(b.t) || (a.ar||99999)-(b.ar||99999)

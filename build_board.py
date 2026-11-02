@@ -872,6 +872,7 @@ def build():
         "start_tab": 1,   # open on "Today"
         "updated": now.strftime("%-I:%M %p %Z, %a %-m/%-d"),
         "updated_iso": now.isoformat(),
+        "tz": now.strftime("%Z"),   # CDT or CST
         "days": views,
         "notes": sorted(set(notes)),
     }
