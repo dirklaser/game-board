@@ -4,8 +4,8 @@ Game Board builder.
 
 Builds site/index.html with two views:
   - "Today":                 every league's games for today only
-  - "Today / This week":     today's MLB, NCAAB, NBA, NHL games + this week's NFL (Tue-Mon) and NCAAF (Mon-Sun)
-  - "Yesterday / Last week": yesterday's daily games + last week's NFL and NCAAF
+  - "Today / This Week":     today's MLB, NCAAB, NBA, NHL games + this week's NFL (Tue-Mon) and NCAAF (Mon-Sun)
+  - "Yesterday / Last Week": yesterday's daily games + last week's NFL and NCAAF
 Data:
   - start times, teams, pitchers, neutral sites and live status from the MLB and NHL
     official schedule feeds (NFL from ESPN's scoreboard feed)
@@ -856,10 +856,13 @@ def build():
         todays_props = {}
 
     print(f"[timing] props loaded at {elapsed()}")
-    current = build_view("current", "Today / This week", today, today, todays_props, notes)
+    current = build_view("current", "Today / This Week", today, today, todays_props, notes)
     print(f"[timing] current view built at {elapsed()}")
-    previous = build_view("previous", "Yesterday / Last week", today - timedelta(days=1),
+    previous = build_view("previous", "Yesterday / Last Week", today - timedelta(days=1),
                           today - timedelta(days=7), {}, notes)
+    upcoming = build_view("next", "Tomorrow / Next Week", today + timedelta(days=1),
+                          today + timedelta(days=7), {}, notes)
+    print(f"[timing] all views built at {elapsed()}")
     # "Today": every league, today's games only (taken from the current view)
     today_only = {
         "key": "today", "label": "Today",
@@ -867,7 +870,7 @@ def build():
         "games": [dict(g, dl=None) for g in current["games"]
                   if g["t"][:10] == today.isoformat()],
     }
-    views = [previous, today_only, current]
+    views = [previous, today_only, current, upcoming]
     payload = {
         "start_tab": 1,   # open on "Today"
         "updated": now.strftime("%-I:%M %p %Z, %a %-m/%-d"),
@@ -884,7 +887,7 @@ def build():
         save_lines(today)
     except Exception as e:
         print(f"[lines] save failed: {e!r}")
-    total = len(current["games"]) + len(previous["games"])
+    total = len(current["games"]) + len(previous["games"]) + len(upcoming["games"])
     print(f"Wrote site/index.html with {total} games at {payload['updated']} (run took {elapsed()})")
 
 
