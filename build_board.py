@@ -122,6 +122,15 @@ def mlb_games(day):
             ls = g.get("linescore") or {}
             if state == "in" and ls.get("currentInningOrdinal"):
                 detail = f"{ls.get('inningHalf', '')} {ls['currentInningOrdinal']}".strip()
+            if state == "post":
+                detail = "Final"
+                try:
+                    inn = int(ls.get("currentInning") or 0)
+                    sched = int(ls.get("scheduledInnings") or 9)
+                    if inn > sched:
+                        detail = f"Final ({inn})"
+                except (TypeError, ValueError):
+                    pass
             note = None
             if g.get("gameType") not in (None, "R") and g.get("seriesDescription"):
                 note = g["seriesDescription"]
@@ -171,6 +180,30 @@ def _ordinal(n):
     return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
 
 
+def ot_label(text):
+    """'OT' -> 'OT', '2OT' -> '2 OT'."""
+    m = re.match(r"(\d+)\s*OT", text or "", re.I)
+    return f"{m.group(1)} OT" if m and m.group(1) != "1" else "OT"
+
+
+REG_PERIODS = {"NFL": 4, "NCAAF": 4, "NBA": 4, "NCAAB": 2}
+
+
+def espn_final_label(label, ev):
+    """'Final', 'Final (OT)', 'Final (2 OT)' from ESPN's period count (falls back to its text)."""
+    status = ev.get("status") or {}
+    try:
+        extra = int(status.get("period") or 0) - REG_PERIODS.get(label, 4)
+    except (TypeError, ValueError):
+        extra = 0
+    if extra <= 0:
+        m = re.search(r"(\d*)\s*OT", (status.get("type") or {}).get("shortDetail", ""), re.I)
+        if not m:
+            return "Final"
+        extra = int(m.group(1) or 1)
+    return "Final (OT)" if extra == 1 else f"Final ({extra} OT)"
+
+
 def nhl_period_label(pd):
     ptype = (pd or {}).get("periodType", "REG")
     num = (pd or {}).get("number") or 0
@@ -201,7 +234,7 @@ def nhl_add_clock(day, games):
             elif clock.get("timeRemaining"):
                 x["detail"] = f"{clock['timeRemaining']} - {per}" if per else clock["timeRemaining"]
         elif x["state"] == "post" and (per == "SO" or per.endswith("OT")):
-            x["detail"] = f"Final/{per}"
+            x["detail"] = "Final (SO)" if per == "SO" else f"Final ({ot_label(per)})"
         for k in ("away", "home"):
             sc = (g.get(f"{k}Team") or {}).get("score")
             if sc is not None:
@@ -322,7 +355,8 @@ def espn_games(label, start_day, end_day):
                 st = ev.get("status", {}).get("type", {})
                 venue = comp.get("venue", {}) or {}
                 games.append({"start": start, "away": side["away"], "home": side["home"],
-                              "state": st.get("state", "pre"), "detail": st.get("shortDetail", ""),
+                              "state": st.get("state", "pre"),
+                              "detail": espn_final_label(label, ev) if st.get("state") == "post" else st.get("shortDetail", ""),
                               "neutral": bool(comp.get("neutralSite")),
                               "city": (venue.get("address") or {}).get("city"),
                               "week": wk, "extra": None})
