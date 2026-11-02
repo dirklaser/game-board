@@ -311,8 +311,8 @@ def copy_text(label, g, weekly):
     """Plain text for the copy button, e.g. 'Wisconsin Badgers (25) @ Iowa Hawkeyes - Week 9'."""
     def name(side):
         t = g[side]
-        # College football: school only ("Oregon State"), no mascot
-        base = (t.get("loc") or t["full"]) if label == "NCAAF" else t["full"]
+        # College football and basketball: school only ("Oregon State"), no mascot
+        base = (t.get("loc") or t["full"]) if label in ("NCAAF", "NCAAB") else t["full"]
         return f"{base} ({t['rank']})" if t.get("rank") else base
     text = f"{name('away')} @ {name('home')}"
     if weekly and g.get("week") is not None:
