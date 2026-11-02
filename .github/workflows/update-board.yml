@@ -2,9 +2,9 @@ name: Update game board
 
 on:
   schedule:
-    # Backup only: GitHub often delays or skips scheduled runs. The real cycle is the
-    # "Queue the next update" step at the bottom, which starts the next run itself.
-    - cron: "*/10 14-23,0-6 * * *"
+    # Backup only, in case the cycle ever breaks: GitHub often delays or skips these.
+    # The real cycle is the "Queue the next update" step at the bottom.
+    - cron: "*/30 * * * *"
   workflow_dispatch:   # adds a "Run workflow" button for manual updates
 
 permissions:
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -45,11 +45,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           HOUR=$(TZ=America/Chicago date +%-H)
-          # Keep the cycle going from 9 AM until 1 AM Central; rest overnight.
+          # Every ~4-5 minutes from 9 AM to 1 AM Central; every ~30 minutes overnight.
+          # The cycle never stops, so it never needs restarting.
           if [ "$HOUR" -ge 9 ] || [ "$HOUR" -lt 1 ]; then
             sleep 150
-            gh workflow run update-board.yml --ref main --repo "$GITHUB_REPOSITORY"
-            echo "Next update queued."
           else
-            echo "Overnight: not queuing another update."
+            sleep 1650
           fi
+          gh workflow run update-board.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo "Next update queued."
