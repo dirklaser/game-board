@@ -189,6 +189,18 @@ def ot_label(text):
 REG_PERIODS = {"NFL": 4, "NCAAF": 4, "NBA": 4, "NCAAB": 2}
 
 
+def venue_text(venue):
+    """'AT&T Stadium, Arlington, TX' from ESPN's venue info (whatever parts it has)."""
+    venue = venue or {}
+    addr = venue.get("address") or {}
+    city, state = addr.get("city"), addr.get("state")
+    place = ", ".join(p for p in (city, state) if p)
+    name = venue.get("fullName")
+    if name and place:
+        return f"{name}, {place}"
+    return name or place or None
+
+
 def espn_final_label(label, ev):
     """'Final', 'Final (OT)', 'Final (2 OT)' from ESPN's period count (falls back to its text)."""
     status = ev.get("status") or {}
@@ -358,7 +370,7 @@ def espn_games(label, start_day, end_day):
                               "state": st.get("state", "pre"),
                               "detail": espn_final_label(label, ev) if st.get("state") == "post" else st.get("shortDetail", ""),
                               "neutral": bool(comp.get("neutralSite")),
-                              "city": (venue.get("address") or {}).get("city"),
+                              "city": venue_text(venue),
                               "week": wk, "extra": None})
             except Exception as e:
                 print(f"  [{label} {d}] skipped one game: {e!r}")
