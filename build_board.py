@@ -469,6 +469,113 @@ PRO_DIVISIONS = {
 }
 
 
+# ---------------------------------------------------------------- records
+# Overall and division records. College records (overall + conference) come with ESPN's
+# scoreboard; pro division records come from ESPN's standings (one request per league).
+
+STANDINGS = {}            # label -> {normalized team name: (overall, division)}
+STANDINGS_LOADED = set()
+STANDINGS_PATHS = {"NFL": ("football", "nfl"), "NBA": ("basketball", "nba"),
+                   "NHL": ("hockey", "nhl"), "MLB": ("baseball", "mlb")}
+WL_RE = re.compile(r"^\d{1,3}-\d{1,3}(?:-\d{1,3})?$")
+
+
+def team_key(name):
+    t = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
+
+
+def scoreboard_record(c, kind):
+    for r in c.get("records") or []:
+        typ = (r.get("type") or "").lower()
+        name = (r.get("name") or "").lower()
+        if (kind == "total" and (typ == "total" or name == "overall")) or \
+           (kind == "vsconf" and (typ == "vsconf" or "conf" in name)):
+            v = r.get("summary") or r.get("displayValue")
+            if v and WL_RE.match(v.strip()):
+                return v.strip()
+    return None
+
+
+def _stat_wl(stat):
+    v = (stat.get("summary") or stat.get("displayValue") or "").strip()
+    return v if WL_RE.match(v) else None
+
+
+def _entries(node):
+    if isinstance(node, dict):
+        st = node.get("standings")
+        if isinstance(st, dict) and isinstance(st.get("entries"), list):
+            yield from st["entries"]
+        for v in node.values():
+            if isinstance(v, (dict, list)):
+                yield from _entries(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _entries(v)
+
+
+def load_standings(label):
+    if label in STANDINGS_LOADED or label not in STANDINGS_PATHS:
+        return
+    STANDINGS_LOADED.add(label)
+    sport, league = STANDINGS_PATHS[label]
+    table = {}
+    for host in ("site.api.espn.com", "site.web.api.espn.com"):
+        try:
+            data = get(f"https://{host}/apis/v2/sports/{sport}/{league}/standings", plain=True,
+                       params={"level": "3"}).json()
+        except Exception:
+            continue
+        for e in _entries(data):
+            team = e.get("team") or {}
+            overall = div = None
+            nums = {}
+            for stat in e.get("stats") or []:
+                name = (stat.get("name") or "").lower()
+                typ = (stat.get("type") or "").lower()
+                wl = _stat_wl(stat)
+                if wl and (typ == "total" or name == "overall"):
+                    overall = wl
+                elif wl and (typ in ("vsdiv", "division") or ("div" in name and "percent" not in name)):
+                    div = wl
+                if name in ("wins", "losses", "ties", "otlosses", "overtimelosses") and stat.get("value") is not None:
+                    nums[name] = int(stat["value"])
+            if not overall and "wins" in nums and "losses" in nums:
+                extra = nums.get("otlosses", nums.get("overtimelosses", nums.get("ties")))
+                overall = f"{nums['wins']}-{nums['losses']}" + (f"-{extra}" if extra else "")
+            for nm in (team.get("displayName"), team.get("name"), team.get("shortDisplayName")):
+                if nm:
+                    table.setdefault(team_key(nm), (overall, div))
+        if table:
+            break
+    STANDINGS[label] = table
+    with_div = sum(1 for v in table.values() if v[1])
+    print(f"[records {label}] standings for {len(table)} names, {with_div} with division records")
+
+
+def record_text(label, team):
+    """'6-2 (2-1 div)' for pros, '7-1 (4-1 conf)' for college."""
+    if label in ("NCAAF", "NCAAB"):
+        rec, sub, tag = team.get("rec") or team.get("sao_rec"), team.get("crec"), "conf"
+    else:
+        load_standings(label)
+        st = STANDINGS.get(label, {})
+        found = st.get(team_key(team.get("full"))) or st.get(team_key(team.get("nick"))) or (None, None)
+        rec = found[0] or team.get("rec") or team.get("sao_rec")
+        sub, tag = found[1], "div"
+    if not rec:
+        return None
+    return f"{rec} ({sub} {tag})" if sub else rec
+
+
+def team_info(label, team):
+    """Conference/division plus record, e.g. 'NFC North · 6-2 (2-1 div)'."""
+    conf = team.get("conf") or PRO_DIVISIONS.get(label, {}).get(team.get("full"))
+    rec = record_text(label, team)
+    return " · ".join(x for x in (conf, rec) if x) or None
+
+
 def mascot(label, team):
     """College team's mascot ('Vikings' from 'Cleveland State Vikings'), shown on the board
     as decoration so the browser's find (Cmd+F) skips it."""
@@ -535,7 +642,9 @@ def espn_games(label, start_day, end_day):
                                                "loc": t.get("location", ""),
                                                "score": c.get("score"),
                                                "rank": college_rank(c),
-                                               "conf_id": str(t.get("conferenceId") or "") or None}
+                                               "conf_id": str(t.get("conferenceId") or "") or None,
+                                               "rec": scoreboard_record(c, "total"),
+                                               "crec": scoreboard_record(c, "vsconf")}
                 if "home" not in side or "away" not in side:
                     continue
                 seen.add(ev.get("id"))
@@ -646,6 +755,7 @@ def load_games(label, start_day, end_day):
 
 # ---------------------------------------------------------------- scoresandodds (ROT numbers)
 
+RECORD_RE = re.compile(r"(?<![\d.])(\d{1,3}-\d{1,3}(?:-\d{1,3})?)(?![\d.])")
 PITCHER_RE = re.compile(r"([A-Z][^()\d]*?\s*\([LR]\))")
 
 
@@ -735,6 +845,7 @@ def sao_pairs(sao_path, day):
             "pitcher": re.sub(r"\s+", " ", pm.group(1)).strip() if pm else None,
             "odds": odds,
             "url": matchup_url(tr, sao_path),
+            "rec": (lambda m2: m2.group(1) if m2 else None)(RECORD_RE.search(PITCHER_RE.sub(" ", rest))),
         })
     return [(rows[i], rows[i + 1]) for i in range(0, len(rows) - 1, 2)]
 
@@ -764,6 +875,8 @@ def attach_rots(games, pairs):
                     g["away_rot"], g["home_rot"] = a["rot"], h["rot"]
                     g["away_odds"], g["home_odds"] = a.get("odds") or {}, h.get("odds") or {}
                     g["url"] = a.get("url") or h.get("url")
+                    g["away"].setdefault("sao_rec", a.get("rec"))
+                    g["home"].setdefault("sao_rec", h.get("rec"))
                     if a["pitcher"]:
                         g["away"]["pitcher"] = a["pitcher"]
                     if h["pitcher"]:
@@ -907,8 +1020,7 @@ def game_row(label, sao_path, g, weekly):
         "url": g.get("url"),
         "day_url": f"https://www.scoresandodds.com/{sao_path}?date={g['start'].date().isoformat()}",
         "am": mascot(label, g["away"]), "hm": mascot(label, g["home"]),
-        "acf": g["away"].get("conf") or PRO_DIVISIONS.get(label, {}).get(g["away"]["full"]),
-        "hcf": g["home"].get("conf") or PRO_DIVISIONS.get(label, {}).get(g["home"]["full"]),
+        "acf": team_info(label, g["away"]), "hcf": team_info(label, g["home"]),
         "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
         "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
         "state": g["state"], "detail": g["detail"],
