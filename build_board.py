@@ -338,11 +338,19 @@ def copy_text(label, g, weekly):
     parts = [f"{name('away')} @ {name('home')}"]
     if weekly and g.get("week") is not None:
         parts.append(f"Week {g['week']}")
-    if g.get("event"):
-        parts.append(g["event"])                      # e.g. "Hall of Fame Series"
+    venue = place = None
     if g.get("neutral"):
-        parts.append(g.get("venue_name") or (g.get("city") if label == "NHL" else None))
-        parts.append(g.get("place"))                   # e.g. "Las Vegas, NV"
+        venue = g.get("venue_name") or (g.get("city") if label == "NHL" else None)
+        place = g.get("place")                         # e.g. "Las Vegas, NV"
+    if g.get("event"):
+        # ESPN sometimes adds the city to the event ("Hall of Fame Series - Las Vegas");
+        # drop any piece that repeats the arena or city shown after it.
+        where = " ".join(x for x in (venue, place) if x).lower()
+        pieces = [x.strip() for x in g["event"].split(" - ")]
+        pieces = [x for x in pieces if x and (not where or x.lower() not in where)]
+        if pieces:
+            parts.append(" - ".join(pieces))           # e.g. "Hall of Fame Series"
+    parts += [venue, place]
     return " - ".join(p for p in parts if p)
 
 
@@ -678,7 +686,7 @@ def game_row(label, sao_path, g, weekly):
         "note": " · ".join(filter(None, [
             g.get("extra"),
             f"Week {g['week']}" if weekly and g.get("week") is not None else None,
-            f"Neutral site: {g['city']}" if g["neutral"] and g["city"] else None,
+            f"Neutral Site: {g['city']}" if g["neutral"] and g["city"] else None,
         ])),
     }
 
