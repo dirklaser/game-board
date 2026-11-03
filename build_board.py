@@ -328,6 +328,17 @@ def college_rank(c):
     return r if 1 <= r <= 25 else None
 
 
+def mascot(label, team):
+    """College team's mascot ('Vikings' from 'Cleveland State Vikings'), shown on the board
+    as decoration so the browser's find (Cmd+F) skips it."""
+    if label not in ("NCAAF", "NCAAB"):
+        return None
+    full, loc = team.get("full") or "", team.get("loc") or ""
+    if loc and full.startswith(loc + " ") and len(full) > len(loc) + 1:
+        return full[len(loc) + 1:]
+    return None
+
+
 def copy_text(label, g, weekly):
     """Plain text for the copy button, e.g. 'Wisconsin Badgers (25) @ Iowa Hawkeyes - Week 9'."""
     def name(side):
@@ -679,6 +690,7 @@ def game_row(label, sao_path, g, weekly):
         "as": g["away"].get("score"), "hs": g["home"].get("score"),
         "url": g.get("url"),
         "day_url": f"https://www.scoresandodds.com/{sao_path}?date={g['start'].date().isoformat()}",
+        "am": mascot(label, g["away"]), "hm": mascot(label, g["home"]),
         "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
         "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
         "state": g["state"], "detail": g["detail"],
