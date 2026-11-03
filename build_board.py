@@ -63,7 +63,9 @@ HEADERS = {
 
 
 def norm(s):
-    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+    t = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    t = re.sub(r"['’`]", "", t)            # "Hawai'i" -> "hawaii", "St. John's" -> "st johns"
+    return re.sub(r"[^a-z0-9]+", " ", t).strip()
 
 
 def get(url, plain=False, extra_headers=None, **kw):
@@ -809,45 +811,73 @@ def matchup_url(tr, sao_path):
     return None
 
 
+RANK_RE = re.compile(r"\(\s*\d{1,2}\s*\)")
+
+
+def sao_row(tr, sao_path, team_re, seen):
+    """One team row from a scoresandodds game table, or None. Works whether or not the
+    team name is a link (smaller schools often have no team page)."""
+    if tr.find_parent("thead") is not None:
+        return None                                   # header row ("11/3 6:00PM | Open | ...")
+    cell = tr.find(["td", "th"])
+    if cell is None:
+        return None
+    cell_text = cell.get_text(" ", strip=True)
+    if re.match(r"\d{1,2}/\d{1,2}\b", cell_text) or re.search(r"\d:\d\d\s*[ap]m", cell_text, re.I):
+        return None                                   # a date/time, not a rotation number
+    m = re.match(r"(\d{1,4})\b", cell_text)
+    if not m:
+        return None
+    rot = int(m.group(1))
+    if rot in seen:
+        return None
+    a = cell.find("a", href=team_re)
+    if a is not None:
+        team = team_re.search(a["href"]).group(1)
+        rest = cell_text.replace(a.get_text(" ", strip=True), " ", 1)[m.end():]
+    else:
+        rest = cell_text[m.end():]
+        name = PITCHER_RE.sub(" ", rest)
+        name = RECORD_RE.sub(" ", name)
+        name = RANK_RE.sub(" ", name)
+        team = norm(name).replace(" ", "-")
+        if not team:
+            return None
+    seen.add(rot)
+    pm = PITCHER_RE.search(rest)
+    odds = {}
+    cells = tr.find_all(["td", "th"], recursive=False)
+    for i, key in header_map(tr).items():
+        if i < len(cells):
+            v = clean_odds(cells[i].get_text(" ", strip=True))
+            if v:
+                odds[key] = v
+    return {
+        "rot": rot,
+        "team": team,
+        "pitcher": re.sub(r"\s+", " ", pm.group(1)).strip() if pm else None,
+        "odds": odds,
+        "url": matchup_url(tr, sao_path),
+        "rec": (lambda m2: m2.group(1) if m2 else None)(RECORD_RE.search(PITCHER_RE.sub(" ", rest))),
+    }
+
+
 def sao_pairs(sao_path, day):
-    """Return [(away_row, home_row), ...] in page order. Each row: {rot, team, pitcher}."""
+    """Return [(away_row, home_row), ...] in page order, paired within each game table."""
     r = get(f"https://www.scoresandodds.com/{sao_path}", params={"date": day.isoformat()})
     soup = BeautifulSoup(r.text, "html.parser")
     team_re = re.compile(rf"/{sao_path}/teams/([a-z0-9-]+)")
-    rows, seen = [], set()
-    for a in soup.find_all("a", href=team_re):
-        tr = a.find_parent("tr")
-        if tr is None:
-            continue
-        cell = tr.find(["td", "th"])
-        if cell is None:
-            continue
-        cell_text = cell.get_text(" ", strip=True)
-        m = re.match(r"(\d{1,4})\b", cell_text)
-        if not m:
-            continue
-        rot = int(m.group(1))
-        if rot in seen:
-            continue
-        seen.add(rot)
-        rest = cell_text.replace(a.get_text(" ", strip=True), " ", 1)[m.end():]
-        pm = PITCHER_RE.search(rest)
-        odds = {}
-        cells = tr.find_all(["td", "th"], recursive=False)
-        for i, key in header_map(tr).items():
-            if i < len(cells):
-                v = clean_odds(cells[i].get_text(" ", strip=True))
-                if v:
-                    odds[key] = v
-        rows.append({
-            "rot": rot,
-            "team": team_re.search(a["href"]).group(1),
-            "pitcher": re.sub(r"\s+", " ", pm.group(1)).strip() if pm else None,
-            "odds": odds,
-            "url": matchup_url(tr, sao_path),
-            "rec": (lambda m2: m2.group(1) if m2 else None)(RECORD_RE.search(PITCHER_RE.sub(" ", rest))),
-        })
-    return [(rows[i], rows[i + 1]) for i in range(0, len(rows) - 1, 2)]
+    pairs, seen = [], set()
+    for table in soup.find_all("table"):
+        rows = []
+        for tr in table.find_all("tr"):
+            if tr.find_parent("table") is not table:
+                continue
+            row = sao_row(tr, sao_path, team_re, seen)
+            if row:
+                rows.append(row)
+        pairs.extend((rows[i], rows[i + 1]) for i in range(0, len(rows) - 1, 2))
+    return pairs
 
 
 def team_matches(slug, team, loose=False):
@@ -855,6 +885,10 @@ def team_matches(slug, team, loose=False):
     if not s:
         return False
     names = {norm(team.get("nick")), norm(team.get("loc")), norm(team.get("full"))}
+    loc = norm(team.get("loc"))
+    for tail in (" u", " university"):          # "Seattle U" -> "seattle"
+        if loc.endswith(tail):
+            names.add(loc[: -len(tail)])
     if s in names:
         return True
     return loose and (s in norm(team.get("full")) or norm(team.get("full")).startswith(s))
