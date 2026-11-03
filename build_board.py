@@ -860,29 +860,72 @@ def team_matches(slug, team, loose=False):
     return loose and (s in norm(team.get("full")) or norm(team.get("full")).startswith(s))
 
 
+def _slug_variants(slug):
+    """'coppin-st' -> {'coppin st', 'coppin state'}; 'va-tech' -> {'va tech', 'virginia tech'}."""
+    base = norm(slug)
+    out = {base}
+    words = base.split()
+    swaps = {"st": "state", "va": "virginia", "u": "university", "univ": "university",
+             "n": "north", "s": "south", "e": "east", "w": "west", "so": "southern", "no": "northern"}
+    if words:
+        out.add(" ".join(swaps.get(w, w) for w in words))
+        if words[-1] == "st":
+            out.add(" ".join(words[:-1] + ["state"]))
+    return out
+
+
+def team_matches_any(slug, team, loose=False):
+    return any(team_matches(v, team, loose) for v in _slug_variants(slug))
+
+
 def attach_rots(games, pairs):
-    """Match scoresandodds rows to games: exact team names first, then a looser pass."""
+    """Match scoresandodds rows to games: exact team names first, then looser passes, then
+    one-team matches (a team plays at most once a day, or once a week in football).
+    Also handles neutral-site games where the two sites list home/away the other way round."""
     used, matched = set(), 0
-    for loose in (False, True):
+
+    def assign(g, a, h, swapped):
+        if swapped:
+            a, h = h, a
+        g["away_rot"], g["home_rot"] = a["rot"], h["rot"]
+        g["away_odds"], g["home_odds"] = a.get("odds") or {}, h.get("odds") or {}
+        g["url"] = a.get("url") or h.get("url")
+        g["away"].setdefault("sao_rec", a.get("rec"))
+        g["home"].setdefault("sao_rec", h.get("rec"))
+        if a["pitcher"]:
+            g["away"]["pitcher"] = a["pitcher"]
+        if h["pitcher"]:
+            g["home"]["pitcher"] = h["pitcher"]
+
+    for mode in ("exact", "loose", "one-team"):
         for g in games:
             if g.get("away_rot") is not None:
                 continue
             for i, (a, h) in enumerate(pairs):
                 if i in used:
                     continue
-                if team_matches(a["team"], g["away"], loose) and team_matches(h["team"], g["home"], loose):
+                hit = None
+                for swapped in (False, True):
+                    ra, rh = (h, a) if swapped else (a, h)
+                    if mode == "exact":
+                        ok = team_matches(ra["team"], g["away"]) and team_matches(rh["team"], g["home"])
+                    elif mode == "loose":
+                        ok = team_matches_any(ra["team"], g["away"], True) and team_matches_any(rh["team"], g["home"], True)
+                    else:
+                        ok = team_matches_any(ra["team"], g["away"]) or team_matches_any(rh["team"], g["home"])
+                    if ok:
+                        hit = swapped
+                        break
+                if hit is not None:
                     used.add(i)
-                    g["away_rot"], g["home_rot"] = a["rot"], h["rot"]
-                    g["away_odds"], g["home_odds"] = a.get("odds") or {}, h.get("odds") or {}
-                    g["url"] = a.get("url") or h.get("url")
-                    g["away"].setdefault("sao_rec", a.get("rec"))
-                    g["home"].setdefault("sao_rec", h.get("rec"))
-                    if a["pitcher"]:
-                        g["away"]["pitcher"] = a["pitcher"]
-                    if h["pitcher"]:
-                        g["home"]["pitcher"] = h["pitcher"]
+                    assign(g, a, h, hit)
                     matched += 1
                     break
+    unmatched = [f"{g['away']['full']} @ {g['home']['full']}" for g in games if g.get("away_rot") is None]
+    if unmatched:
+        left = [f"{a['team']}/{h['team']}" for i, (a, h) in enumerate(pairs) if i not in used]
+        print(f"    no ROT for: {'; '.join(unmatched[:8])}" + (" ..." if len(unmatched) > 8 else ""))
+        print(f"    unused scoresandodds rows: {'; '.join(left[:8]) or 'none'}" + (" ..." if len(left) > 8 else ""))
     return matched
 
 
