@@ -393,7 +393,8 @@ def espn_games(label, start_day, end_day):
                                                "abbr": t.get("abbreviation", ""),
                                                "loc": t.get("location", ""),
                                                "score": c.get("score"),
-                                               "rank": college_rank(c)}
+                                               "rank": college_rank(c),
+                                               "conf_id": str(t.get("conferenceId") or "") or None}
                 if "home" not in side or "away" not in side:
                     continue
                 seen.add(ev.get("id"))
@@ -414,7 +415,81 @@ def espn_games(label, start_day, end_day):
         d += timedelta(days=1)
     if failures and not games:
         raise RuntimeError(f"ESPN unavailable for {failures} day(s)")
+    if label in ("NCAAF", "NCAAB") and games:
+        try:
+            attach_conferences(label, games)
+        except Exception as e:
+            print(f"  [{label}] conference names failed: {e!r}")
     return games
+
+
+# ---------------------------------------------------------------- college conferences
+# ESPN's scoreboard gives each school's conference as an ID; names come from ESPN's
+# conference list (fetched once per run), or one lookup per unknown ID as a fallback.
+
+CONF_NAMES = {}          # (label, id) -> short name, e.g. "Big Ten"
+CONF_LIST_LOADED = set()
+CONF_LOOKUP_LIMIT = 60
+
+
+def _collect_groups(node, label):
+    if isinstance(node, dict):
+        gid = node.get("groupId") or node.get("id")
+        name = node.get("shortName") or node.get("abbreviation") or node.get("name")
+        if gid and name and ("conference" in str(node.get("uid", "")) or node.get("isConference")
+                             or "shortName" in node):
+            CONF_NAMES.setdefault((label, str(gid)), str(name))
+        for v in node.values():
+            _collect_groups(v, label)
+    elif isinstance(node, list):
+        for v in node:
+            _collect_groups(v, label)
+
+
+def load_conference_list(label):
+    if label in CONF_LIST_LOADED:
+        return
+    CONF_LIST_LOADED.add(label)
+    sport, league, _ = ESPN_PATHS[label]
+    for url in (f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/groups",
+                f"https://site.web.api.espn.com/apis/site/v2/sports/{sport}/{league}/groups"):
+        try:
+            _collect_groups(get(url, plain=True).json(), label)
+            if any(k[0] == label for k in CONF_NAMES):
+                return
+        except Exception:
+            continue
+
+
+def conference_name(label, cid):
+    if not cid:
+        return None
+    key = (label, cid)
+    if key in CONF_NAMES:
+        return CONF_NAMES[key]
+    if sum(1 for k in CONF_NAMES if k[0] == label) < CONF_LOOKUP_LIMIT:
+        sport, league, _ = ESPN_PATHS[label]
+        try:
+            d = get(f"https://sports.core.api.espn.com/v2/sports/{sport}/leagues/{league}/groups/{cid}",
+                    plain=True, params={"lang": "en"}).json()
+            name = d.get("shortName") or d.get("abbreviation") or d.get("name")
+            CONF_NAMES[key] = name
+            return name
+        except Exception:
+            pass
+    CONF_NAMES[key] = None
+    return None
+
+
+def attach_conferences(label, games):
+    load_conference_list(label)
+    named = 0
+    for g in games:
+        for side in ("away", "home"):
+            t = g[side]
+            t["conf"] = conference_name(label, t.get("conf_id"))
+            named += bool(t["conf"])
+    print(f"  [{label}] conferences named for {named} of {2 * len(games)} teams")
 
 
 def load_games(label, start_day, end_day):
@@ -691,6 +766,7 @@ def game_row(label, sao_path, g, weekly):
         "url": g.get("url"),
         "day_url": f"https://www.scoresandodds.com/{sao_path}?date={g['start'].date().isoformat()}",
         "am": mascot(label, g["away"]), "hm": mascot(label, g["home"]),
+        "acf": g["away"].get("conf"), "hcf": g["home"].get("conf"),
         "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
         "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
         "state": g["state"], "detail": g["detail"],
