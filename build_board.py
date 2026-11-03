@@ -19,7 +19,7 @@ import unicodedata
 import json
 import re
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -867,16 +867,28 @@ def sao_pairs(sao_path, day):
     r = get(f"https://www.scoresandodds.com/{sao_path}", params={"date": day.isoformat()})
     soup = BeautifulSoup(r.text, "html.parser")
     team_re = re.compile(rf"/{sao_path}/teams/([a-z0-9-]+)")
-    pairs, seen = [], set()
+    pairs = []
     for table in soup.find_all("table"):
-        rows = []
+        # Rotation numbers repeat on a page: scoresandodds shows the main board (e.g. 611
+        # Wofford) and the extended board (also 611, Coppin State) side by side. So numbers
+        # are only de-duplicated inside one game table, never across the whole page.
+        rows, seen = [], set()
         for tr in table.find_all("tr"):
             if tr.find_parent("table") is not table:
                 continue
             row = sao_row(tr, sao_path, team_re, seen)
             if row:
                 rows.append(row)
-        pairs.extend((rows[i], rows[i + 1]) for i in range(0, len(rows) - 1, 2))
+        card = table.find_parent(attrs={"data-time": True})
+        start = None
+        if card is not None:
+            try:
+                start = datetime.fromtimestamp(int(card["data-time"]), timezone.utc).astimezone(TZ).date()
+            except (ValueError, TypeError, OverflowError):
+                start = None
+        for i in range(0, len(rows) - 1, 2):
+            rows[i]["day"] = rows[i + 1]["day"] = start
+            pairs.append((rows[i], rows[i + 1]))
     return pairs
 
 
@@ -1061,20 +1073,27 @@ SAO_CACHE = {}
 
 
 def sao_pairs_range(sao_path, start_day, end_day):
-    """ROT rows for every day in a range, de-duplicated (weekly pages may repeat games)."""
+    """ROT rows for every day in a range, de-duplicated (weekly pages may repeat games).
+    Also checks the pages either side of the range for games whose start time falls inside
+    it (a late Hawaii tip-off can sit on the next day's page)."""
     out, seen = [], set()
-    d = start_day
-    while d <= end_day:
+    d = start_day - timedelta(days=1)
+    while d <= end_day + timedelta(days=1):
         key = (sao_path, d)
+        inside = start_day <= d <= end_day
         if key not in SAO_CACHE:
             try:
                 SAO_CACHE[key] = sao_pairs(sao_path, d)
             except Exception as e:
                 print(f"  [{sao_path} {d}] scoresandodds failed: {e!r}")
                 SAO_CACHE[key] = []
-        for pair in SAO_CACHE[key]:
-            if pair[0]["rot"] not in seen:
-                seen.add(pair[0]["rot"])
+        for pair in SAO_CACHE.get(key, []):
+            day = pair[0].get("day")
+            if not (start_day <= day <= end_day if day else inside):
+                continue
+            ident = (pair[0]["rot"], pair[0]["team"], pair[1]["team"])
+            if ident not in seen:
+                seen.add(ident)
                 out.append(pair)
         d += timedelta(days=1)
     return out
