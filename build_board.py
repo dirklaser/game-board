@@ -189,6 +189,15 @@ def ot_label(text):
 REG_PERIODS = {"NFL": 4, "NCAAF": 4, "NBA": 4, "NCAAB": 2}
 
 
+def event_name(comp):
+    """Special-event name ESPN attaches to a game, e.g. 'Hall of Fame Series' or a bowl name."""
+    for n in comp.get("notes") or []:
+        h = (n or {}).get("headline")
+        if h:
+            return h.strip()
+    return None
+
+
 def venue_text(venue):
     """'AT&T Stadium, Arlington, TX' from ESPN's venue info (whatever parts it has)."""
     venue = venue or {}
@@ -326,10 +335,15 @@ def copy_text(label, g, weekly):
         # College football and basketball: school only ("Oregon State"), no mascot
         base = (t.get("loc") or t["full"]) if label in ("NCAAF", "NCAAB") else t["full"]
         return f"{base} ({t['rank']})" if t.get("rank") else base
-    text = f"{name('away')} @ {name('home')}"
+    parts = [f"{name('away')} @ {name('home')}"]
     if weekly and g.get("week") is not None:
-        text += f" - Week {g['week']}"
-    return text
+        parts.append(f"Week {g['week']}")
+    if g.get("event"):
+        parts.append(g["event"])                      # e.g. "Hall of Fame Series"
+    if g.get("neutral"):
+        parts.append(g.get("venue_name") or (g.get("city") if label == "NHL" else None))
+        parts.append(g.get("place"))                   # e.g. "Las Vegas, NV"
+    return " - ".join(p for p in parts if p)
 
 
 def espn_games(label, start_day, end_day):
@@ -371,7 +385,11 @@ def espn_games(label, start_day, end_day):
                               "detail": espn_final_label(label, ev) if st.get("state") == "post" else st.get("shortDetail", ""),
                               "neutral": bool(comp.get("neutralSite")),
                               "city": venue_text(venue),
-                              "week": wk, "extra": None})
+                              "venue_name": venue.get("fullName"),
+                              "place": ", ".join(x for x in ((venue.get("address") or {}).get("city"),
+                                                             (venue.get("address") or {}).get("state")) if x) or None,
+                              "event": event_name(comp),
+                              "week": wk, "extra": event_name(comp)})
             except Exception as e:
                 print(f"  [{label} {d}] skipped one game: {e!r}")
         d += timedelta(days=1)

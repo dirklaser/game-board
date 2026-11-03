@@ -179,6 +179,26 @@ footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
 <script>
 const BOARD = __DATA__;
 let filter = "ALL", sort = "time", dayIdx = BOARD.start_tab || 0;
+// Remember the tab, filter, sort and scroll position across the automatic refresh.
+// Saved per browser tab, so a fresh visit still opens on "Today".
+const STATE_KEY = "gameboard-view";
+let savedScroll = null;
+try {
+  const st = JSON.parse(sessionStorage.getItem(STATE_KEY) || "null");
+  if (st) {
+    const i = BOARD.days.findIndex(d => d.key === st.tab);
+    if (i >= 0) dayIdx = i;
+    if (typeof st.filter === "string") filter = st.filter;
+    if (st.sort === "time" || st.sort === "rot") sort = st.sort;
+    if (typeof st.y === "number") savedScroll = st.y;
+  }
+} catch (e) {}
+function saveView(){
+  try {
+    sessionStorage.setItem(STATE_KEY, JSON.stringify({
+      tab: (BOARD.days[dayIdx] || {}).key, filter, sort, y: window.scrollY }));
+  } catch (e) {}
+}
 const showScore = x => x.state!=="pre" && x.as!=null && x.hs!=null && x.as!=="" && x.hs!=="";
 const LINE = {MLB:"Run Line", NHL:"Puck Line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread", NCAAB:"Spread"};
 const SVG = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
@@ -319,22 +339,31 @@ daysEl.innerHTML = BOARD.days.map((d,i)=>`<button class="chip" data-d="${i}" ari
 daysEl.querySelectorAll("[data-d]").forEach(b=>b.addEventListener("click",()=>{
   dayIdx=+b.dataset.d;
   daysEl.querySelectorAll("[data-d]").forEach(x=>x.setAttribute("aria-pressed",x===b));
-  render();
+  render(); saveView();
 }));
-document.querySelectorAll("[data-f]").forEach(b=>b.addEventListener("click",()=>{
-  filter=b.dataset.f;
-  document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===b));
-  render();
-}));
-document.querySelectorAll("[data-s]").forEach(b=>b.addEventListener("click",()=>{
-  sort=b.dataset.s;
-  document.querySelectorAll("[data-s]").forEach(x=>x.setAttribute("aria-pressed",x===b));
-  render();
-}));
+document.querySelectorAll("[data-f]").forEach(b=>{
+  b.setAttribute("aria-pressed", b.dataset.f===filter);
+  b.addEventListener("click",()=>{
+    filter=b.dataset.f;
+    document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+    render(); saveView();
+  });
+});
+document.querySelectorAll("[data-s]").forEach(b=>{
+  b.setAttribute("aria-pressed", b.dataset.s===sort);
+  b.addEventListener("click",()=>{
+    sort=b.dataset.s;
+    document.querySelectorAll("[data-s]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+    render(); saveView();
+  });
+});
 render();
+if (savedScroll != null) requestAnimationFrame(()=>window.scrollTo(0, savedScroll));
+let scrollTimer;
+window.addEventListener("scroll", ()=>{ clearTimeout(scrollTimer); scrollTimer = setTimeout(saveView, 200); }, {passive:true});
 setInterval(()=>{ if(!openProps.size) render(); }, 60000);
 // Reload for fresh data every 5 minutes, but not while a props panel is open
-setInterval(()=>{ if(!openProps.size) location.reload(); }, 300000);
+setInterval(()=>{ if(!openProps.size){ saveView(); location.reload(); } }, 300000);
 </script>
 </body>
 </html>
