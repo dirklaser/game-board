@@ -336,7 +336,9 @@ function render(){
     BOARD.notes.map(n=>`<p>${esc(n)}</p>`).join("") +
     `<p>Updated ${esc(BOARD.updated)}${ageText()}. Refreshes automatically. Live odds are a snapshot from that update. ROT numbers and odds from scoresandodds.com.</p>`;
   const mins = ageMinutes(), st = document.getElementById("stale");
-  if(mins!=null && mins>=20){
+  // Only warn when this copy of the page was just loaded; an old copy (laptop asleep,
+  // background tab) reloads itself instead of showing a false alarm.
+  if(mins!=null && mins>=20 && pageAgeMin()<3){
     st.textContent = `This board last updated ${mins>=120?Math.round(mins/60)+" hours":mins+" minutes"} ago, so scores and live odds are out of date. Check the latest run in GitHub Actions.`;
     st.hidden = false;
   } else { st.hidden = true; }
@@ -365,13 +367,24 @@ document.querySelectorAll("[data-s]").forEach(b=>{
     render(); saveView();
   });
 });
+const PAGE_LOADED = Date.now();
+function pageAgeMin(){ return (Date.now() - PAGE_LOADED) / 60000; }
 render();
 if (savedScroll != null) requestAnimationFrame(()=>window.scrollTo(0, savedScroll));
 let scrollTimer;
 window.addEventListener("scroll", ()=>{ clearTimeout(scrollTimer); scrollTimer = setTimeout(saveView, 200); }, {passive:true});
-setInterval(()=>{ if(!openProps.size) render(); }, 60000);
-// Reload for fresh data every 5 minutes, but not while a props panel is open
-setInterval(()=>{ if(!openProps.size){ saveView(); location.reload(); } }, 300000);
+// Reload for fresh data every 5 minutes. An open props panel holds it off, but only for
+// up to 15 minutes. Also checks right away when the tab or laptop wakes up, because
+// browsers pause timers in background tabs and during sleep.
+function maybeReload(){
+  const age = pageAgeMin();
+  if(age >= 5 && (!openProps.size || age >= 15)){ saveView(); location.reload(); return true; }
+  return false;
+}
+setInterval(()=>{ if(!maybeReload() && !openProps.size) render(); }, 60000);
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible" && !maybeReload()) render(); });
+window.addEventListener("focus", ()=>{ if(!maybeReload()) render(); });
+window.addEventListener("pageshow", e=>{ if(e.persisted) maybeReload(); });
 </script>
 </body>
 </html>
