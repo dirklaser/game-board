@@ -338,7 +338,10 @@ function render(){
   const mins = ageMinutes(), st = document.getElementById("stale");
   // Only warn when this copy of the page was just loaded; an old copy (laptop asleep,
   // background tab) reloads itself instead of showing a false alarm.
-  if(mins!=null && mins>=20 && pageAgeMin()<3){
+  // Overnight (1-7 AM Central) the board updates every ~30 minutes, so allow more time then.
+  const upHour = BOARD.updated_iso ? +new Date(BOARD.updated_iso).toLocaleString("en-US",{hour:"numeric",hour12:false,timeZone:"America/Chicago"}) % 24 : 12;
+  const limit = (upHour >= 1 && upHour < 7) ? 40 : 20;
+  if(mins!=null && mins>=limit && pageAgeMin()<3){
     st.textContent = `This board last updated ${mins>=120?Math.round(mins/60)+" hours":mins+" minutes"} ago, so scores and live odds are out of date. Check the latest run in GitHub Actions.`;
     st.hidden = false;
   } else { st.hidden = true; }
