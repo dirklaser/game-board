@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wix's Game Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#e9eef2; --sheet:#f8fafb; --ink:#1b2530; --muted:#5d6b78; --rule:#cfd8df;
+  --accent:#1f3f73; --live:#b3261e; --chip:#dde5eb;
+  --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#A32D2D; --ncaab-bg:#FAECE7; --ncaab-fg:#712B13; --ncaab-ic:#D85A30; --nba-bg:#F0997B; --nba-fg:#4A1B0C; --nba-ic:#993C1D; --ncaaf-bg:#E9D8C3; --ncaaf-fg:#5A3B1E; --ncaaf-ic:#A87B50; --nfl-bg:#7A5230; --nfl-fg:#F7EBDD; --nfl-ic:#6B4526; --nhl-bg:#E6F1FB; --nhl-fg:#0C447C; --nhl-ic:#185FA5;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
+    --accent:#7fa6e6; --live:#ff7a6e; --chip:#26313b;
+    --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#F09595; --ncaab-bg:#712B13; --ncaab-fg:#FAECE7; --ncaab-ic:#F0997B; --nba-bg:#4A1B0C; --nba-fg:#F5C4B3; --nba-ic:#D85A30; --ncaaf-bg:#7A5638; --ncaaf-fg:#F6EADC; --ncaaf-ic:#D9B48C; --nfl-bg:#4A3220; --nfl-fg:#EBD9C5; --nfl-ic:#B98A5E; --nhl-bg:#0C447C; --nhl-fg:#E6F1FB; --nhl-ic:#85B7EB;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
+  --accent:#7fa6e6; --live:#ff7a6e; --chip:#26313b;
+  --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#F09595; --ncaab-bg:#712B13; --ncaab-fg:#FAECE7; --ncaab-ic:#F0997B; --nba-bg:#4A1B0C; --nba-fg:#F5C4B3; --nba-ic:#D85A30; --ncaaf-bg:#7A5638; --ncaaf-fg:#F6EADC; --ncaaf-ic:#D9B48C; --nfl-bg:#4A3220; --nfl-fg:#EBD9C5; --nfl-ic:#B98A5E; --nhl-bg:#0C447C; --nhl-fg:#E6F1FB; --nhl-ic:#85B7EB;
+}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Barlow,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.45}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 48px}
+header h1{font-family:"Barlow Condensed","Arial Narrow",Arial,sans-serif;font-weight:700;font-size:clamp(2.2rem,6vw,3.4rem);line-height:1;margin:0;letter-spacing:-.01em}
+header p{margin:6px 0 0;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 14px;align-items:center}
+.controls .spacer{flex:1}
+.fwrap{overflow-x:auto;max-width:100%;padding-bottom:2px}
+.fgrid{display:inline-grid;grid-template-columns:repeat(7,auto);column-gap:8px;row-gap:0;align-items:center}
+.fgrid .grp{justify-self:center;grid-row:1}
+.fgrid .brk{grid-row:2;height:7px;margin:3px 14px 4px;border:1.5px solid var(--rule);border-bottom:0;border-radius:6px 6px 0 0;position:relative}
+.fgrid .brk::before{content:"";position:absolute;left:50%;top:-4px;width:1.5px;height:4px;background:var(--rule);transform:translateX(-50%)}
+.controls{align-items:flex-end}
+button.chip{font:inherit;font-weight:600;font-size:.9rem;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);padding:6px 14px;border-radius:999px;cursor:pointer}
+button.chip[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sheet{background:var(--sheet);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.game{display:grid;grid-template-columns:78px 58px 1fr;gap:4px 14px;padding:14px 18px;border-top:1px solid var(--rule);align-items:start}
+.game:first-child{border-top:0}
+.time{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.35rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.time small{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--live);margin-top:3px}
+.lgc{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:3px}
+.lg{width:100%;font-weight:600;font-size:.78rem;padding:2px 0;text-align:center;border-radius:4px}
+.lgi{display:block;width:22px;height:22px}
+.lgi svg{width:100%;height:100%;display:block}
+.lg.MLB{background:var(--mlb-bg);color:var(--mlb-fg)} .lgi.MLB{color:var(--mlb-ic)}
+.lg.NCAAB{background:var(--ncaab-bg);color:var(--ncaab-fg)} .lgi.NCAAB{color:var(--ncaab-ic)}
+.lg.NBA{background:var(--nba-bg);color:var(--nba-fg)} .lgi.NBA{color:var(--nba-ic)}
+.lg.NCAAF{background:var(--ncaaf-bg);color:var(--ncaaf-fg)} .lgi.NCAAF{color:var(--ncaaf-ic)}
+.lg.NFL{background:var(--nfl-bg);color:var(--nfl-fg)} .lgi.NFL{color:var(--nfl-ic)}
+.lg.NHL{background:var(--nhl-bg);color:var(--nhl-fg)} .lgi.NHL{color:var(--nhl-ic)}
+.time .dl{display:block;font-family:Barlow,sans-serif;font-size:.72rem;font-weight:600;color:var(--muted);margin:0 0 2px;letter-spacing:.01em}
+.team .sc{font-family:Barlow,sans-serif;font-weight:600;font-size:.95rem;margin-left:8px;font-variant-numeric:tabular-nums}
+.teams{display:grid;grid-template-columns:44px minmax(0,1fr) repeat(4,80px);gap:2px 10px;align-items:baseline}
+.teams.five{grid-template-columns:44px minmax(0,1fr) repeat(5,84px);column-gap:8px}
+.odd.stk{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;font-size:.85rem}
+.odd.stk span + span{color:var(--muted)}
+.open{color:var(--muted)}
+.oh.live{color:var(--live)}
+.masc::after{content:attr(data-m)}
+.team .conf{font-family:Barlow,sans-serif;font-weight:500;font-size:.78rem;color:var(--muted);margin-left:8px;white-space:nowrap}
+
+.stale{margin:14px 0 0;padding:10px 14px;border:1px solid var(--live);border-radius:8px;color:var(--live);font-size:.9rem;font-weight:500}
+.stale[hidden]{display:none}
+.oh{font-size:.7rem;font-weight:600;color:var(--muted);text-align:right}
+.odd{font-variant-numeric:tabular-nums;text-align:right;font-size:.95rem;white-space:nowrap}
+.rot{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:500;text-align:right}
+.team{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.2rem;line-height:1.25}
+.team .p{font-family:Barlow,sans-serif;font-weight:400;font-size:.88rem;color:var(--muted);margin-left:6px}
+.note{grid-column:3;font-size:.82rem;color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:2px 0}
+.note .nl{margin-right:12px}
+button.cp{margin-left:auto;font:inherit;font-size:.78rem;color:var(--muted);background:none;border:1px solid var(--rule);border-radius:6px;padding:2px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;max-width:100%;text-align:left}
+button.cp:hover{color:var(--ink);border-color:var(--muted)}
+button.cp:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.cp svg{width:13px;height:13px;flex:none}
+button.cp.done{color:var(--accent);border-color:var(--accent)}
+.game.past{opacity:.55}
+a.gd{color:var(--accent);font-weight:600;text-decoration:none}
+button.pb{font:inherit;font-weight:600;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
+button.pb:hover{text-decoration:underline}
+button.pb:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.props{grid-column:1 / -1;margin-top:10px;border-top:1px dashed var(--rule);padding-top:10px}
+.props[hidden]{display:none}
+.pcats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.pcats button{font:inherit;font-size:.8rem;font-weight:600;border:1px solid var(--rule);background:var(--bg);color:var(--ink);padding:3px 10px;border-radius:999px;cursor:pointer}
+.pcats button[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+.ptable-wrap{overflow-x:auto}
+table.pt{border-collapse:collapse;width:100%;font-size:.9rem}
+table.pt th{font-size:.72rem;font-weight:600;color:var(--muted);text-align:right;padding:4px 8px;border-bottom:1px solid var(--rule)}
+table.pt th:first-child,table.pt td:first-child{text-align:left}
+table.pt td{padding:5px 8px;border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.pt td small{display:block;color:var(--muted);font-size:.72rem}
+table.pt td .tm{color:var(--muted);font-size:.78rem;margin-left:6px}
+table.pt th.bk{text-align:center;min-width:92px}
+table.pt td.bk{text-align:center;padding:4px 6px}
+.chip{display:block;border:1px solid var(--rule);border-radius:6px;padding:2px 6px;margin:3px 0;background:var(--sheet);line-height:1.2}
+.chip b{display:block;font-weight:600;font-size:.82rem}
+.chip span{font-size:.78rem;color:var(--muted)}
+.chip.best{background:#fbf0c2;border-color:#e2c65a}
+.chip.best span{color:#5b4a0c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .chip.best{background:#4a3f12;border-color:#8a7424}:root:not([data-theme="light"]) .chip.best span{color:#f1dfa0}}
+:root[data-theme="dark"] .chip.best{background:#4a3f12;border-color:#8a7424}
+:root[data-theme="dark"] .chip.best span{color:#f1dfa0}
+a.gd:hover{text-decoration:underline}
+a.gd:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.time small.final{color:var(--muted)}
+#days{margin-bottom:0}
+.empty{padding:28px 18px;color:var(--muted)}
+footer{margin-top:18px;font-size:.85rem;color:var(--muted)}
+@media (max-width:520px){
+  .game{grid-template-columns:62px 1fr;padding:12px 14px}
+  .lgc{grid-column:1;grid-row:2;width:44px}
+  .lgi{width:18px;height:18px}
+  .teams{grid-column:2;grid-row:1 / span 2}
+  .note{grid-column:2}
+  .team{font-size:1.08rem}
+  .teams{grid-template-columns:34px repeat(3,minmax(0,1fr));gap:2px 8px}
+  .teams.five{grid-template-columns:34px repeat(3,minmax(0,1fr))}
+  .odd.stk{display:none}
+  .teams > div:nth-child(2){display:none}
+  .teams .rot{grid-row:span 2}
+  .teams .team{grid-column:2 / -1}
+  .teams .odd,.teams .oh{text-align:left}
+  .teams .odd{margin-bottom:6px}
+  .open{display:none}
+  .wrap{padding-left:12px;padding-right:12px}
+  .fgrid{column-gap:3px}
+  .fgrid .brk{margin:3px 10px 4px}
+  .fgrid .chip{padding:4px 7px;font-size:.76rem}
+  .odd{font-size:.8rem}
+  .team .p{display:block;margin-left:0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Game Board</h1>
+    <p id="dateline"></p>
+  </header>
+
+  <p class="stale" id="stale" hidden></p>
+  <div class="controls" role="group" aria-label="Day" id="days"></div>
+  <div class="controls" role="group" aria-label="Filter and sort">
+    <div class="fwrap">
+      <div class="fgrid">
+        <button class="chip grp" data-f="BASKETBALL" aria-pressed="false" style="grid-column:3 / span 2">Basketball</button>
+        <button class="chip grp" data-f="FOOTBALL" aria-pressed="false" style="grid-column:5 / span 2">Football</button>
+        <span class="brk" aria-hidden="true" style="grid-column:3 / span 2"></span>
+        <span class="brk" aria-hidden="true" style="grid-column:5 / span 2"></span>
+        <button class="chip" data-f="ALL" aria-pressed="true" style="grid-row:3">All</button>
+        <button class="chip" data-f="MLB" aria-pressed="false" style="grid-row:3">MLB</button>
+        <button class="chip" data-f="NCAAB" aria-pressed="false" style="grid-row:3">NCAAB</button>
+        <button class="chip" data-f="NBA" aria-pressed="false" style="grid-row:3">NBA</button>
+        <button class="chip" data-f="NCAAF" aria-pressed="false" style="grid-row:3">NCAAF</button>
+        <button class="chip" data-f="NFL" aria-pressed="false" style="grid-row:3">NFL</button>
+        <button class="chip" data-f="NHL" aria-pressed="false" style="grid-row:3">NHL</button>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <button class="chip" data-s="time" aria-pressed="true">By time</button>
+    <button class="chip" data-s="rot" aria-pressed="false">By ROT</button>
+  </div>
+
+  <div class="sheet" id="list"></div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const BOARD = __DATA__;
+let filter = "ALL", sort = "time", dayIdx = BOARD.start_tab || 0;
+// Remember the tab, filter, sort and scroll position across the automatic refresh.
+// Saved per browser tab, so a fresh visit still opens on "Today".
+const STATE_KEY = "gameboard-view";
+let savedScroll = null;
+try {
+  const st = JSON.parse(sessionStorage.getItem(STATE_KEY) || "null");
+  if (st) {
+    const i = BOARD.days.findIndex(d => d.key === st.tab);
+    if (i >= 0) dayIdx = i;
+    if (typeof st.filter === "string") filter = st.filter;
+    if (st.sort === "time" || st.sort === "rot") sort = st.sort;
+    if (typeof st.y === "number") savedScroll = st.y;
+  }
+} catch (e) {}
+function saveView(){
+  try {
+    sessionStorage.setItem(STATE_KEY, JSON.stringify({
+      tab: (BOARD.days[dayIdx] || {}).key, filter, sort, y: window.scrollY }));
+  } catch (e) {}
+}
+const showScore = x => x.state!=="pre" && x.as!=null && x.hs!=null && x.as!=="" && x.hs!=="";
+const LINE = {MLB:"Run Line", NHL:"Puck Line", NFL:"Spread", NBA:"Spread", NCAAF:"Spread", NCAAB:"Spread"};
+const SVG = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const BASEBALL = SVG('<path d="M5.636 18.364a9 9 0 1 0 12.728 -12.728a9 9 0 0 0 -12.728 12.728"/><path d="M12.495 3.02a9 9 0 0 1 -9.475 9.475"/><path d="M20.98 11.505a9 9 0 0 0 -9.475 9.475"/><path d="M9 9l2 2"/><path d="M13 13l2 2"/><path d="M11 7l2 1"/><path d="M7 11l1 2"/><path d="M16 11l1 2"/><path d="M11 16l2 1"/>');
+const BASKETBALL = SVG('<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.65 5.65l12.7 12.7"/><path d="M5.65 18.35l12.7 -12.7"/><path d="M12 3a9 9 0 0 0 9 9"/><path d="M3 12a9 9 0 0 1 9 9"/>');
+const FOOTBALL = SVG('<path d="M15 9l-6 6"/><path d="M10 12l2 2"/><path d="M12 10l2 2"/><path d="M8 21a5 5 0 0 0 -5 -5"/><path d="M16 3c-7.18 0 -13 5.82 -13 13a5 5 0 0 0 5 5c7.18 0 13 -5.82 13 -13a5 5 0 0 0 -5 -5"/><path d="M16 3a5 5 0 0 0 5 5"/>');
+const HOCKEY = SVG('<path d="M14 3 8 17.5a2 2 0 0 1-1.8 1.2H3"/><ellipse cx="17" cy="18.5" rx="4" ry="1.8"/>');
+const ICONS = {MLB:BASEBALL, NCAAB:BASKETBALL, NBA:BASKETBALL, NCAAF:FOOTBALL, NFL:FOOTBALL, NHL:HOCKEY};
+const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+function copyText(text){
+  if(navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  const ta=document.createElement("textarea"); ta.value=text; ta.style.position="absolute"; ta.style.left="-9999px";
+  document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}finally{ta.remove();}
+  return Promise.resolve();
+}
+document.addEventListener("click", e=>{
+  const b=e.target.closest("button.cp"); if(!b) return;
+  copyText(b.dataset.cp).then(()=>{
+    const s=b.querySelector("span"), old=s.textContent;
+    b.classList.add("done"); s.textContent="Copied";
+    setTimeout(()=>{ b.classList.remove("done"); s.textContent=old; }, 1200);
+  });
+});
+const ageMinutes = () => { const t = Date.parse(BOARD.updated_iso||""); return isNaN(t) ? null : Math.max(0, Math.round((Date.now()-t)/60000)); };
+const ageText = () => { const m = ageMinutes(); return m==null ? "" : m<1 ? " (just now)" : ` (${m} min ago)`; };
+// College mascots are drawn by CSS (::after), so they show on screen but Cmd+F skips them.
+const teamName = (full, m) => {
+  if (!m || !full || !full.endsWith(" " + m)) return esc(full);
+  const school = full.slice(0, full.length - m.length - 1);
+  return `${esc(school)}<span class="masc" data-m=" ${esc(m)}"></span>`;
+};
+const GROUPS = {BASKETBALL:["NCAAB","NBA"], FOOTBALL:["NCAAF","NFL"]};
+const inFilter = x => filter==="ALL" || x.lg===filter || (GROUPS[filter]||[]).includes(x.lg);
+const openProps = new Set(), propCat = {};
+BOARD.days.forEach((d,di)=>d.games.forEach((g,gi)=>g._i=`${di}-${gi}`));
+const propCount = x => Object.values(x.props||{}).reduce((n,a)=>n+a.length,0);
+function propsPanel(x){
+  const cats = Object.keys(x.props||{});
+  if(!cats.length) return "";
+  const cur = propCat[x._i] && x.props[propCat[x._i]] ? propCat[x._i] : cats[0];
+  const rows = x.props[cur];
+  const two = rows.some(r=>r.o.length>1);
+  const byBook = rows.some(r=>r.b);
+  const cell = o => o ? `${esc([o[0],o[1]].filter(Boolean).join(" "))}<small>${esc(o[2]||"")}</small>` : "—";
+  return `<div class="pcats">${cats.map(c=>`<button data-pc="${esc(c)}" data-g="${x._i}" aria-pressed="${c===cur}">${esc(c)} (${x.props[c].length})</button>`).join("")}</div>
+    <div class="ptable-wrap">${byBook ? bookTable(rows) : `<table class="pt"><thead><tr><th>Player</th>${two?"<th>Over</th><th>Under</th>":"<th>Best odds</th>"}</tr></thead><tbody>
+    ${rows.map(r=>`<tr><td>${esc(r.p)}<span class="tm">${esc(r.t)}</span></td>${two?`<td>${cell(r.o[0])}</td><td>${cell(r.o[1])}</td>`:`<td>${cell(r.o[0])}</td>`}</tr>`).join("")}
+    </tbody></table>`}</div>`;
+}
+const BOOKS = [["bet365","bet365"],["fanduel","FanDuel"],["draftkings","DraftKings"]];
+const fmtOdds = n => n==null ? "" : (n===100||n===-100) ? "even" : (n>0?"+"+n:String(n));
+const fmtLine = (side,v) => v==null ? (side==="o"?"Yes":"No") : side+v;
+function bookTable(rows){
+  return `<table class="pt"><thead><tr><th>Player</th>${BOOKS.map(([,n])=>`<th class="bk">${n}</th>`).join("")}</tr></thead><tbody>
+  ${rows.map(r=>`<tr><td>${esc(r.p)}<span class="tm">${esc(r.t)}</span></td>${BOOKS.map(([k])=>{
+      const x = (r.b||{})[k];
+      if(!x) return `<td class="bk">—</td>`;
+      const chips = [];
+      if(x.o!=null) chips.push(`<span class="chip${r.bo===k?" best":""}"><b>${esc(fmtLine("o",x.v))}</b><span>${esc(fmtOdds(x.o))}</span></span>`);
+      if(x.u!=null) chips.push(`<span class="chip${r.bu===k?" best":""}"><b>${esc(fmtLine("u",x.v))}</b><span>${esc(fmtOdds(x.u))}</span></span>`);
+      return `<td class="bk">${chips.join("")}</td>`;
+    }).join("")}</tr>`).join("")}
+  </tbody></table>`;
+}
+const findGame = id => { const [di,gi]=id.split("-").map(Number); return BOARD.days[di].games[gi]; };
+document.addEventListener("click", e=>{
+  const pb = e.target.closest("button.pb");
+  if(pb){
+    const id = pb.dataset.g, panel = document.getElementById("props-"+id);
+    if(openProps.has(id)){ openProps.delete(id); panel.hidden = true; panel.innerHTML = ""; pb.setAttribute("aria-expanded","false"); }
+    else { openProps.add(id); panel.innerHTML = propsPanel(findGame(id)); panel.hidden = false; pb.setAttribute("aria-expanded","true"); }
+    return;
+  }
+  const pc = e.target.closest("button[data-pc]");
+  if(pc){
+    propCat[pc.dataset.g] = pc.dataset.pc;
+    document.getElementById("props-"+pc.dataset.g).innerHTML = propsPanel(findGame(pc.dataset.g));
+  }
+});
+const hasClose = x => x.state!=="pre" && Object.keys(x.aco||{}).length + Object.keys(x.hco||{}).length > 0;
+const stack = v => { const [s,tt] = v||[]; return `<div class="odd open stk"><span>${esc(s||"—")}</span><span>${esc(tt||"—")}</span></div>`; };
+const odds = (o, co, x, op, cl) => {
+  const live = k => (o||{})[k], close = k => (co||{})[k];
+  let cells = stack(op);                                  // Open: side over total
+  if(x.state==="in") cells += stack(cl);                  // Close: side over total
+  for(const k of ["ml","tot","line"]){
+    const v = (x.state==="post" && hasClose(x)) ? close(k) : live(k);
+    cells += `<div class="odd">${esc(v||"—")}</div>`;
+  }
+  return cells;
+};
+const lineName = x => LINE[x.lg] || "Line";
+const heads = x => x.state==="in"
+  ? `<div class="oh open">Open</div><div class="oh open">Close</div><div class="oh live">Live ML</div><div class="oh live">Live Total</div><div class="oh live">Live ${lineName(x)}</div>`
+  : x.state==="post" && hasClose(x)
+  ? `<div class="oh open">Open</div><div class="oh">Close ML</div><div class="oh">Close Total</div><div class="oh">Close ${lineName(x)}</div>`
+  : `<div class="oh open">Open</div><div class="oh">Money</div><div class="oh">Total</div><div class="oh">${lineName(x)}</div>`;
+const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){
+  const day = BOARD.days[dayIdx] || {games:[],long:""};
+  document.getElementById("dateline").textContent = day.long + " · all times " + (BOARD.tz || "CT");
+  let g = day.games.filter(inFilter);
+  g.sort(sort==="time"
+    ? (a,b)=> a.t.localeCompare(b.t) || (a.ar||99999)-(b.ar||99999)
+    : (a,b)=> (a.ar||99999)-(b.ar||99999) || a.t.localeCompare(b.t));
+  const list = document.getElementById("list");
+  if(!g.length){
+    list.innerHTML = `<div class="empty">No ${filter==="ALL"?"":(GROUPS[filter]?filter.toLowerCase():filter)+" "}games for ${esc(day.label.toLowerCase())}.</div>`;
+  } else {
+    list.innerHTML = g.map(x=>{
+      const status = x.state==="in" ? `<small>${esc(x.detail||"Live")}</small>`
+                   : x.state==="post" ? `<small class="final">${esc(x.detail||"Final")}</small>` : "";
+      return `<div class="game${x.state==="post"?" past":""}">
+        <div class="time">${x.dl?`<span class="dl">${esc(x.dl)}</span>`:""}${esc(x.time)}${status}</div>
+        <div class="lgc"><div class="lg ${x.lg}">${x.lg}</div><span class="lgi ${x.lg}" aria-hidden="true">${ICONS[x.lg]||""}</span></div>
+        <div class="teams${x.state==="in"?" five":""}">
+          <div></div><div></div>
+          ${heads(x)}
+          <div class="rot">${x.ar ?? "—"}</div>
+          <div class="team">${teamName(x.a, x.am)}${x.acf?`<span class="conf">${esc(x.acf)}</span>`:""}${showScore(x)?`<span class="sc">${esc(x.as)}</span>`:""}${x.ap?`<span class="p">${esc(x.ap)}</span>`:""}</div>
+          ${odds(x.ao, x.aco, x, x.aop, x.acl)}
+          <div class="rot">${x.hr ?? "—"}</div>
+          <div class="team">@ ${teamName(x.h, x.hm)}${x.hcf?`<span class="conf">${esc(x.hcf)}</span>`:""}${showScore(x)?`<span class="sc">${esc(x.hs)}</span>`:""}${x.hp?`<span class="p">${esc(x.hp)}</span>`:""}</div>
+          ${odds(x.ho, x.hco, x, x.hop, x.hcl)}
+        </div>
+        <div class="note"><span class="nl">${x.note?esc(x.note)+" · ":""}<a class="gd" href="${esc(x.day_url||x.url)}" target="_blank" rel="noopener">Game details</a>${x.url?` · <a class="gd" href="${esc(x.url)}" target="_blank" rel="noopener">Matchup</a>`:""}${propCount(x)?` · <button class="pb" data-g="${x._i}" aria-expanded="${openProps.has(x._i)}">Props (${propCount(x)})</button>`:""}</span>${x.cp?`<button class="cp" data-cp="${esc(x.cp)}" title="Copy">${COPY_ICON}<span>${esc(x.cp)}</span></button>`:""}</div>
+        <div class="props" id="props-${x._i}" ${openProps.has(x._i)?"":"hidden"}>${openProps.has(x._i)?propsPanel(x):""}</div>
+      </div>`;
+    }).join("");
+  }
+  document.getElementById("foot").innerHTML =
+    BOARD.notes.map(n=>`<p>${esc(n)}</p>`).join("") +
+    `<p>Updated ${esc(BOARD.updated)}${ageText()}. Refreshes automatically. Live odds are a snapshot from that update. ROT numbers and odds from scoresandodds.com.</p>`;
+  const mins = ageMinutes(), st = document.getElementById("stale");
+  // Only warn when this copy of the page was just loaded; an old copy (laptop asleep,
+  // background tab) reloads itself instead of showing a false alarm.
+  // Overnight (1-7 AM Central) the board updates every ~30 minutes, so allow more time then.
+  const upHour = BOARD.updated_iso ? +new Date(BOARD.updated_iso).toLocaleString("en-US",{hour:"numeric",hour12:false,timeZone:"America/Chicago"}) % 24 : 12;
+  const limit = (upHour >= 1 && upHour < 7) ? 40 : 20;
+  if(mins!=null && mins>=limit && pageAgeMin()<3){
+    st.textContent = `This board last updated ${mins>=120?Math.round(mins/60)+" hours":mins+" minutes"} ago, so scores and live odds are out of date. Check the latest run in GitHub Actions.`;
+    st.hidden = false;
+  } else { st.hidden = true; }
+}
+
+const daysEl = document.getElementById("days");
+daysEl.innerHTML = BOARD.days.map((d,i)=>`<button class="chip" data-d="${i}" aria-pressed="${i===dayIdx}">${esc(d.label)}</button>`).join("");
+daysEl.querySelectorAll("[data-d]").forEach(b=>b.addEventListener("click",()=>{
+  dayIdx=+b.dataset.d;
+  daysEl.querySelectorAll("[data-d]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  render(); saveView();
+}));
+document.querySelectorAll("[data-f]").forEach(b=>{
+  b.setAttribute("aria-pressed", b.dataset.f===filter);
+  b.addEventListener("click",()=>{
+    filter=b.dataset.f;
+    document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+    render(); saveView();
+  });
+});
+document.querySelectorAll("[data-s]").forEach(b=>{
+  b.setAttribute("aria-pressed", b.dataset.s===sort);
+  b.addEventListener("click",()=>{
+    sort=b.dataset.s;
+    document.querySelectorAll("[data-s]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+    render(); saveView();
+  });
+});
+const PAGE_LOADED = Date.now();
+function pageAgeMin(){ return (Date.now() - PAGE_LOADED) / 60000; }
+render();
+if (savedScroll != null) requestAnimationFrame(()=>window.scrollTo(0, savedScroll));
+let scrollTimer;
+window.addEventListener("scroll", ()=>{ clearTimeout(scrollTimer); scrollTimer = setTimeout(saveView, 200); }, {passive:true});
+// Reload for fresh data every 5 minutes. An open props panel holds it off, but only for
+// up to 15 minutes. Also checks right away when the tab or laptop wakes up, because
+// browsers pause timers in background tabs and during sleep.
+function maybeReload(){
+  const age = pageAgeMin();
+  if(age >= 5 && (!openProps.size || age >= 15)){ saveView(); location.reload(); return true; }
+  return false;
+}
+setInterval(()=>{ if(!maybeReload() && !openProps.size) render(); }, 60000);
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible" && !maybeReload()) render(); });
+window.addEventListener("focus", ()=>{ if(!maybeReload()) render(); });
+window.addEventListener("pageshow", e=>{ if(e.persisted) maybeReload(); });
+</script>
+</body>
+</html>
