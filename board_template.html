@@ -342,6 +342,14 @@ function render(){
   const upHour = BOARD.updated_iso ? +new Date(BOARD.updated_iso).toLocaleString("en-US",{hour:"numeric",hour12:false,timeZone:"America/Chicago"}) % 24 : 12;
   const limit = (upHour >= 1 && upHour < 7) ? 40 : 20;
   if(mins!=null && mins>=limit && pageAgeMin()<3){
+    // The browser may have handed us an old saved copy (Safari restoring a tab, cached
+    // page). Fetch a guaranteed-fresh copy once before calling it out of date.
+    let last = 0;
+    try { last = +sessionStorage.getItem("gameboard-fresh") || 0; } catch(e){}
+    if(Date.now() - last > 120000){
+      try { sessionStorage.setItem("gameboard-fresh", String(Date.now())); } catch(e){}
+      freshReload(); return;
+    }
     st.textContent = `This board last updated ${mins>=120?Math.round(mins/60)+" hours":mins+" minutes"} ago, so scores and live odds are out of date. Check the latest run in GitHub Actions.`;
     st.hidden = false;
   } else { st.hidden = true; }
@@ -371,6 +379,17 @@ document.querySelectorAll("[data-s]").forEach(b=>{
   });
 });
 const PAGE_LOADED = Date.now();
+// Reload with a one-time address so neither the browser nor GitHub can serve a saved copy,
+// then tidy the address bar back to the normal link.
+function freshReload(){
+  saveView();
+  const u = new URL(location.href); u.searchParams.set("r", Date.now());
+  location.replace(u.toString());
+}
+try {
+  const u = new URL(location.href);
+  if(u.searchParams.has("r")){ u.searchParams.delete("r"); history.replaceState(null, "", u.pathname + u.search + u.hash); }
+} catch(e){}
 function pageAgeMin(){ return (Date.now() - PAGE_LOADED) / 60000; }
 render();
 if (savedScroll != null) requestAnimationFrame(()=>window.scrollTo(0, savedScroll));
@@ -381,7 +400,7 @@ window.addEventListener("scroll", ()=>{ clearTimeout(scrollTimer); scrollTimer =
 // browsers pause timers in background tabs and during sleep.
 function maybeReload(){
   const age = pageAgeMin();
-  if(age >= 5 && (!openProps.size || age >= 15)){ saveView(); location.reload(); return true; }
+  if(age >= 5 && (!openProps.size || age >= 15)){ freshReload(); return true; }
   return false;
 }
 setInterval(()=>{ if(!maybeReload() && !openProps.size) render(); }, 60000);
