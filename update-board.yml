@@ -1,0 +1,69 @@
+name: Update game board
+
+on:
+  schedule:
+    # Backup only, in case the cycle ever breaks: GitHub often delays or skips these.
+    # The real cycle is the "Queue the next update" step at the bottom.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:   # adds a "Run workflow" button for manual updates
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write   # lets each run start the next one
+
+concurrency:
+  group: pages
+  cancel-in-progress: false   # let a running update finish; the newest waiting one runs next
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests beautifulsoup4 playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: python -u build_board.py
+        timeout-minutes: 6
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+      - name: Queue the next update
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HOUR=$(TZ=America/Chicago date +%-H)
+          # Every ~4-5 minutes from 7 AM to 1 AM Central; every ~30 minutes overnight.
+          # The overnight wait is cut short so the fast cycle starts right at 7 AM.
+          # The cycle never stops, so it never needs restarting.
+          if [ "$HOUR" -ge 7 ] || [ "$HOUR" -lt 1 ]; then
+            sleep 150
+          else
+            NOW=$(date +%s)
+            SEVEN=$(TZ=America/Chicago date -d "today 07:00" +%s)
+            WAIT=$(( SEVEN - NOW ))
+            if [ "$WAIT" -gt 1650 ]; then WAIT=1650; fi
+            if [ "$WAIT" -lt 150 ]; then WAIT=150; fi
+            sleep "$WAIT"
+          fi
+          # Try up to 6 times over ~3 minutes: one failed request to GitHub would
+          # otherwise stop the cycle until the (unreliable) backup schedule restarts it.
+          for i in 1 2 3 4 5 6; do
+            if gh workflow run update-board.yml --ref main --repo "$GITHUB_REPOSITORY"; then
+              echo "Next update queued."; exit 0
+            fi
+            echo "Queueing failed (try $i), retrying in 30s..."; sleep 30
+          done
+          echo "Could not queue the next update."; exit 1
