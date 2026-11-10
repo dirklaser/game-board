@@ -1359,6 +1359,8 @@ def build():
     page = template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/"))
     Path("site").mkdir(exist_ok=True)
     Path("site/index.html").write_text(page, encoding="utf-8")
+    # The open page fetches this every 5 minutes and updates in place (no reload, no jump).
+    Path("site/board.json").write_text(json.dumps(payload), encoding="utf-8")
     try:
         save_lines(today)
     except Exception as e:
