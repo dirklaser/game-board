@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 70
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -41,12 +41,15 @@ jobs:
         timeout-minutes: 6
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
+        timeout-minutes: 6
         with:
           path: site
       - id: deploy
         uses: actions/deploy-pages@v4
+        timeout-minutes: 8
       - name: Queue the next update
         if: always()
+        timeout-minutes: 45
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -64,12 +67,13 @@ jobs:
             if [ "$WAIT" -lt 150 ]; then WAIT=150; fi
             sleep "$WAIT"
           fi
-          # Try up to 6 times over ~3 minutes: one failed request to GitHub would
-          # otherwise stop the cycle until the (unreliable) backup schedule restarts it.
-          for i in 1 2 3 4 5 6; do
+          # Keep trying for up to ~35 minutes: when GitHub has an outage, a failed request
+          # here would otherwise stop the cycle until the (unreliable) backup schedule
+          # restarts it, which can take hours.
+          for i in $(seq 1 35); do
             if gh workflow run update-board.yml --ref main --repo "$GITHUB_REPOSITORY"; then
               echo "Next update queued."; exit 0
             fi
-            echo "Queueing failed (try $i), retrying in 30s..."; sleep 30
+            echo "Queueing failed (try $i), retrying in 60s..."; sleep 60
           done
           echo "Could not queue the next update."; exit 1
