@@ -30,7 +30,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests beautifulsoup4 playwright
-      - run: python -m playwright install --with-deps chromium
+      # The browser is only a backup for when scoresandodds blocks the normal request.
+      # Installing it needs Ubuntu's download servers; if those are down or slow, skip it
+      # (after 3 minutes at most) and build the board anyway.
+      - name: Install backup browser (optional)
+        continue-on-error: true
+        timeout-minutes: 3
+        run: python -m playwright install --with-deps chromium || python -m playwright install chromium
       - run: python -u build_board.py
         timeout-minutes: 6
       - uses: actions/configure-pages@v5
@@ -45,12 +51,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           HOUR=$(TZ=America/Chicago date +%-H)
-          # Every ~4-5 minutes from 9 AM to 1 AM Central; every ~30 minutes overnight.
+          # Every ~4-5 minutes from 7 AM to 1 AM Central; every ~30 minutes overnight.
+          # The overnight wait is cut short so the fast cycle starts right at 7 AM.
           # The cycle never stops, so it never needs restarting.
-          if [ "$HOUR" -ge 9 ] || [ "$HOUR" -lt 1 ]; then
+          if [ "$HOUR" -ge 7 ] || [ "$HOUR" -lt 1 ]; then
             sleep 150
           else
-            sleep 1650
+            NOW=$(date +%s)
+            SEVEN=$(TZ=America/Chicago date -d "today 07:00" +%s)
+            WAIT=$(( SEVEN - NOW ))
+            if [ "$WAIT" -gt 1650 ]; then WAIT=1650; fi
+            if [ "$WAIT" -lt 150 ]; then WAIT=150; fi
+            sleep "$WAIT"
           fi
-          gh workflow run update-board.yml --ref main --repo "$GITHUB_REPOSITORY"
-          echo "Next update queued."
+          # Try up to 6 times over ~3 minutes: one failed request to GitHub would
+          # otherwise stop the cycle until the (unreliable) backup schedule restarts it.
+          for i in 1 2 3 4 5 6; do
+            if gh workflow run update-board.yml --ref main --repo "$GITHUB_REPOSITORY"; then
+              echo "Next update queued."; exit 0
+            fi
+            echo "Queueing failed (try $i), retrying in 30s..."; sleep 30
+          done
+          echo "Could not queue the next update."; exit 1
