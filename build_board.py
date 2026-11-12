@@ -744,12 +744,24 @@ def attach_conferences(label, games):
     print(f"  [{label}] conferences named for {named} of {2 * len(games)} teams")
 
 
-def load_games(label, start_day, end_day):
+def _load_games_once(label, start_day, end_day):
     if label == "MLB":
         return mlb_games(start_day)
     if label == "NHL":
         return nhl_games(start_day)
     return espn_games(label, start_day, end_day)
+
+
+def load_games(label, start_day, end_day):
+    """Schedule feeds sometimes fail for a moment; try three times before giving up."""
+    for attempt, pause in ((1, 3), (2, 8), (3, None)):
+        try:
+            return _load_games_once(label, start_day, end_day)
+        except Exception as e:
+            if pause is None:
+                raise
+            print(f"  [{label}] schedule attempt {attempt} failed ({e!r}), retrying in {pause}s")
+            _time.sleep(pause)
 
 
 
@@ -1147,6 +1159,28 @@ def lines_url():
     return f"https://{owner.lower()}.github.io/{name}/lines.json"
 
 
+PREV_BOARD = {}
+
+
+def load_prev_board():
+    """Last published board, used only when a schedule feed is down for this whole run."""
+    try:
+        data = get(lines_url().replace("lines.json", "board.json"), plain=True,
+                   params={"t": int(datetime.now().timestamp())}).json()
+        if datetime.fromisoformat(data["updated_iso"]).astimezone(TZ).date() == datetime.now(TZ).date():
+            PREV_BOARD.update(data)
+            print("[board] loaded the previous update as a fallback")
+    except Exception as e:
+        print(f"[board] no previous update to fall back on ({e!r})")
+
+
+def prev_rows(view_key, label):
+    for d in PREV_BOARD.get("days", []):
+        if d.get("key") == view_key:
+            return [g for g in d.get("games", []) if g.get("lg") == label]
+    return []
+
+
 def load_prev_lines():
     try:
         data = get(lines_url(), plain=True, params={"t": int(datetime.now().timestamp())}).json()
@@ -1288,7 +1322,15 @@ def build_view(key, title, anchor_day, weekly_anchor, props_by_league, notes):
             games = load_games(label, start_day, end_day)
         except Exception as e:
             print(f"[{tag}] schedule failed: {e}")
-            notes.append(f"{label} schedule couldn't be loaded this run.")
+            old = prev_rows(key, label)
+            if old:
+                rows.extend(old)
+                print(f"[{tag}] showing {len(old)} games from the previous update instead")
+                note = f"{label} couldn't be refreshed this run; showing {label} from the previous update."
+            else:
+                note = f"{label} schedule couldn't be loaded this run."
+            if note not in notes:
+                notes.append(note)
             continue
         if weekly:
             wk = week_number(label, start_day)
@@ -1325,6 +1367,7 @@ def build():
     today = now.date()
     notes = []
     load_prev_lines()
+    load_prev_board()
     try:
         todays_props = load_props()
     except Exception as e:
