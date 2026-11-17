@@ -170,12 +170,70 @@ def nhl_games(day):
                           "city": (g.get("venue") or {}).get("default"),
                           "week": None,
                           "extra": "Preseason" if g.get("gameType") == 1 else None})
+    if games:
+        try:
+            nhl_add_goalies(day, games)
+        except Exception as e:
+            print(f"  [NHL {day}] starting goalies failed: {e!r}")
     if any(x["state"] != "pre" for x in games):
         try:
             nhl_add_clock(day, games)
         except Exception as e:
             print(f"  [NHL {day}] scoreboard clock failed: {e!r}")
     return games
+
+
+# Starting goalies come from Daily Faceoff, which marks each one Confirmed or Likely
+# (blank there means nobody has reported yet, shown here as "Unconfirmed").
+def _goalie_page(day):
+    url = f"https://www.dailyfaceoff.com/starting-goalies/{day.isoformat()}"
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', get(url).text, re.S)
+    if not m:
+        raise ValueError("no goalie data on the page")
+    return json.loads(m.group(1))["props"]["pageProps"].get("data") or []
+
+
+def goalie_text(x, side):
+    name = (x.get(f"{side}GoalieName") or "").strip()
+    if not name:
+        return None
+    status = (x.get(f"{side}NewsStrengthName") or "").strip() or "Unconfirmed"
+    w, l, ot = (x.get(f"{side}Goalie{k}") for k in ("Wins", "Losses", "OvertimeLosses"))
+    sv = x.get(f"{side}GoalieSavePercentage")
+    stats = []
+    if w is not None and l is not None:
+        stats.append(f"{w}-{l}-{ot or 0}")
+    try:
+        stats.append(f"{float(sv):.3f}".lstrip("0") + " SV%")
+    except (TypeError, ValueError):
+        pass
+    return f"G: {name} ({status})" + (" " + ", ".join(stats) if stats else "")
+
+
+GOALIES_DOWN = []   # set after one failure, so a blocked site can't slow the whole run
+
+
+def nhl_add_goalies(day, games):
+    if GOALIES_DOWN:
+        return
+    try:
+        rows = _goalie_page(day)
+    except Exception:
+        GOALIES_DOWN.append(True)
+        raise
+    def same(team, dfo_name):
+        a, b = norm(team["full"]), norm(dfo_name)
+        return bool(a) and (a == b or (team.get("nick") and norm(team["nick"]) == b.split(" ")[-1]
+                                       and b.endswith(norm(team["nick"]))))
+    found = 0
+    for g in games:
+        for x in rows:
+            if same(g["away"], x.get("awayTeamName", "")) and same(g["home"], x.get("homeTeamName", "")):
+                g["away"]["goalie"] = goalie_text(x, "away")
+                g["home"]["goalie"] = goalie_text(x, "home")
+                found += 1
+                break
+    print(f"  [NHL {day}] starting goalies for {found} of {len(games)} games")
 
 
 def _ordinal(n):
@@ -1129,8 +1187,10 @@ def game_row(label, sao_path, g, weekly):
         "day_url": f"https://www.scoresandodds.com/{sao_path}?date={g['start'].date().isoformat()}",
         "am": mascot(label, g["away"]), "hm": mascot(label, g["home"]),
         "acf": team_info(label, g["away"]), "hcf": team_info(label, g["home"]),
-        "a": g["away"]["full"], "ap": g["away"]["pitcher"] if label == "MLB" else None,
-        "h": g["home"]["full"], "hp": g["home"]["pitcher"] if label == "MLB" else None,
+        "a": g["away"]["full"],
+        "ap": g["away"]["pitcher"] if label == "MLB" else g["away"].get("goalie") if label == "NHL" else None,
+        "h": g["home"]["full"],
+        "hp": g["home"]["pitcher"] if label == "MLB" else g["home"].get("goalie") if label == "NHL" else None,
         "state": g["state"], "detail": g["detail"],
         "props": g.get("props") or {},
         "note": " · ".join(filter(None, [
