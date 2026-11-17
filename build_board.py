@@ -210,6 +210,44 @@ def goalie_text(x, side):
     return f"G: {name} ({status})" + (" " + ", ".join(stats) if stats else "")
 
 
+PREV_GOALIES, NEW_GOALIES = {}, {}
+GOALIE_NEWS_MINUTES = 60      # highlight goalie news posted within the last hour
+GOALIE_CHANGE_MINUTES = 180   # highlight a changed starter for three hours
+
+
+def _minutes_since(iso):
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        return max(0, int((datetime.now(timezone.utc) - t).total_seconds() // 60))
+    except (TypeError, ValueError):
+        return None
+
+
+def goalie_flag(day, g, side, x):
+    """Recent news or a changed starter for one team, remembered from run to run in
+    lines.json so a switch stays marked for a few hours."""
+    name = (x.get(f"{side}GoalieName") or "").strip()
+    if not name:
+        return None
+    key = f"{day.isoformat()}|{g['away']['full']}|{g['home']['full']}|{side}"
+    old = PREV_GOALIES.get(key) or {}
+    mem = {"name": name, "changed": old.get("changed"), "was": old.get("was")}
+    if old.get("name") and old["name"] != name:
+        mem["changed"] = datetime.now(timezone.utc).isoformat()
+        mem["was"] = old["name"]
+        print(f"  [NHL {day}] goalie change: {g[side]['full']} {old['name']} -> {name}")
+    NEW_GOALIES[key] = mem
+    flag = {"txt": (x.get(f"{side}NewsDetails") or "").strip() or None}
+    news_min = _minutes_since(x.get(f"{side}NewsCreatedAt"))
+    if news_min is not None and news_min <= GOALIE_NEWS_MINUTES:
+        flag["news"] = news_min
+    chg_min = _minutes_since(mem["changed"]) if mem["changed"] else None
+    if chg_min is not None and chg_min <= GOALIE_CHANGE_MINUTES and mem["was"] != name:
+        flag["was"] = mem["was"]
+        flag["chg"] = chg_min
+    return flag if any(flag.values()) else None
+
+
 GOALIES_DOWN = []   # set after one failure, so a blocked site can't slow the whole run
 
 
@@ -229,8 +267,9 @@ def nhl_add_goalies(day, games):
     for g in games:
         for x in rows:
             if same(g["away"], x.get("awayTeamName", "")) and same(g["home"], x.get("homeTeamName", "")):
-                g["away"]["goalie"] = goalie_text(x, "away")
-                g["home"]["goalie"] = goalie_text(x, "home")
+                for side in ("away", "home"):
+                    g[side]["goalie"] = goalie_text(x, side)
+                    g[side]["goalie_flag"] = goalie_flag(day, g, side, x)
                 found += 1
                 break
     print(f"  [NHL {day}] starting goalies for {found} of {len(games)} games")
@@ -1191,6 +1230,8 @@ def game_row(label, sao_path, g, weekly):
         "ap": g["away"]["pitcher"] if label == "MLB" else g["away"].get("goalie") if label == "NHL" else None,
         "h": g["home"]["full"],
         "hp": g["home"]["pitcher"] if label == "MLB" else g["home"].get("goalie") if label == "NHL" else None,
+        "agf": g["away"].get("goalie_flag") if label == "NHL" else None,
+        "hgf": g["home"].get("goalie_flag") if label == "NHL" else None,
         "state": g["state"], "detail": g["detail"],
         "props": g.get("props") or {},
         "note": " · ".join(filter(None, [
@@ -1245,6 +1286,7 @@ def load_prev_lines():
     try:
         data = get(lines_url(), plain=True, params={"t": int(datetime.now().timestamp())}).json()
         PREV_LINES.update(data.get("games", {}))
+        PREV_GOALIES.update(data.get("goalies", {}))
         print(f"[lines] loaded {len(PREV_LINES)} remembered lines")
     except Exception as e:
         print(f"[lines] no remembered lines yet ({e!r})")
@@ -1365,7 +1407,8 @@ def save_lines(today):
     for k, v in PREV_LINES.items():          # games no longer on any tab, still recent
         if k not in keep and k.split("|")[1] >= cutoff:
             keep[k] = v
-    Path("site/lines.json").write_text(json.dumps({"games": keep}), encoding="utf-8")
+    goalies = {k: v for k, v in {**PREV_GOALIES, **NEW_GOALIES}.items() if k.split("|")[0] >= cutoff}
+    Path("site/lines.json").write_text(json.dumps({"games": keep, "goalies": goalies}), encoding="utf-8")
     print(f"[lines] saved {len(keep)} lines")
 
 

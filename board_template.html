@@ -13,19 +13,20 @@
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   --bg:#e9eef2; --sheet:#f8fafb; --ink:#1b2530; --muted:#5d6b78; --rule:#cfd8df;
+  --hot-bg:#FDF0C4; --hot-fg:#8A5A00;
   --accent:#1f3f73; --live:#b3261e; --chip:#dde5eb;
   --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#A32D2D; --ncaab-bg:#FAECE7; --ncaab-fg:#712B13; --ncaab-ic:#D85A30; --nba-bg:#F0997B; --nba-fg:#4A1B0C; --nba-ic:#993C1D; --ncaaf-bg:#E9D8C3; --ncaaf-fg:#5A3B1E; --ncaaf-ic:#A87B50; --nfl-bg:#7A5230; --nfl-fg:#F7EBDD; --nfl-ic:#6B4526; --nhl-bg:#E6F1FB; --nhl-fg:#0C447C; --nhl-ic:#185FA5;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
+    --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45; --hot-bg:#4a3f12; --hot-fg:#F1C75B;
     --accent:#7fa6e6; --live:#ff7a6e; --chip:#26313b;
     --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#F09595; --ncaab-bg:#712B13; --ncaab-fg:#FAECE7; --ncaab-ic:#F0997B; --nba-bg:#4A1B0C; --nba-fg:#F5C4B3; --nba-ic:#D85A30; --ncaaf-bg:#7A5638; --ncaaf-fg:#F6EADC; --ncaaf-ic:#D9B48C; --nfl-bg:#4A3220; --nfl-fg:#EBD9C5; --nfl-ic:#B98A5E; --nhl-bg:#0C447C; --nhl-fg:#E6F1FB; --nhl-ic:#85B7EB;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45;
+  --bg:#141a20; --sheet:#1c242c; --ink:#e7edf2; --muted:#9aa8b4; --rule:#2e3a45; --hot-bg:#4a3f12; --hot-fg:#F1C75B;
   --accent:#7fa6e6; --live:#ff7a6e; --chip:#26313b;
   --mlb-bg:#A32D2D; --mlb-fg:#FCEBEB; --mlb-ic:#F09595; --ncaab-bg:#712B13; --ncaab-fg:#FAECE7; --ncaab-ic:#F0997B; --nba-bg:#4A1B0C; --nba-fg:#F5C4B3; --nba-ic:#D85A30; --ncaaf-bg:#7A5638; --ncaaf-fg:#F6EADC; --ncaaf-ic:#D9B48C; --nfl-bg:#4A3220; --nfl-fg:#EBD9C5; --nfl-ic:#B98A5E; --nhl-bg:#0C447C; --nhl-fg:#E6F1FB; --nhl-ic:#85B7EB;
 }
@@ -79,6 +80,9 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .team{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.2rem;line-height:1.25}
 .team .p{font-family:Barlow,sans-serif;font-weight:400;font-size:.88rem;color:var(--muted);margin-left:6px}
 .team .nm{white-space:nowrap}   /* keep "New York Islanders" on one line */
+.team .p.hot{color:var(--ink)}
+.team .p.hot{background:var(--hot-bg);border-radius:4px;padding:1px 6px;margin-left:-6px;width:fit-content}
+.gtag{display:inline-block;margin-left:8px;font-size:.72rem;font-weight:600;color:var(--hot-fg);text-transform:uppercase;letter-spacing:.02em}
 .team .p.own{display:block;margin-left:0;line-height:1.3}   /* NHL goalie: its own line under the team */
 .note{grid-column:3;font-size:.82rem;color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:2px 0}
 .note .nl{margin-right:12px}
@@ -235,6 +239,17 @@ const teamName = (full, m) => {
   const school = full.slice(0, full.length - m.length - 1);
   return `${esc(school)}<span class="masc" data-m=" ${esc(m)}"></span>`;
 };
+// Pitcher/goalie line. NHL goalies get a yellow highlight for a starter change (3 hours)
+// or fresh news (1 hour); hovering shows Daily Faceoff's latest note.
+function goalieLine(text, f, lg){
+  if(lg!=="NHL") return `<span class="p">${esc(text)}</span>`;
+  f = f || {};
+  const ago = m => m < 1 ? "just now" : m < 60 ? `${m}m ago` : `${Math.floor(m/60)}h ${m%60}m ago`;
+  let tag = "";
+  if(f.was) tag = `<span class="gtag">Changed ${ago(f.chg)} · was ${esc(f.was)}</span>`;
+  else if(f.news != null) tag = `<span class="gtag">News ${ago(f.news)}</span>`;
+  return `<span class="p own${tag?" hot":""}"${f.txt?` title="${esc(f.txt)}"`:""}>${esc(text)}${tag}</span>`;
+}
 const GROUPS = {BASKETBALL:["NCAAB","NBA"], FOOTBALL:["NCAAF","NFL"]};
 const inFilter = x => filter==="ALL" || x.lg===filter || (GROUPS[filter]||[]).includes(x.lg);
 let openProps = new Set(), propCat = {};
@@ -326,10 +341,10 @@ function render(){
           <div></div><div></div>
           ${heads(x)}
           <div class="rot">${x.ar ?? "—"}</div>
-          <div class="team"><span class="nm">${teamName(x.a, x.am)}</span>${x.acf?`<span class="conf">${esc(x.acf)}</span>`:""}${showScore(x)?`<span class="sc">${esc(x.as)}</span>`:""}${x.ap?`<span class="p${x.lg==="NHL"?" own":""}">${esc(x.ap)}</span>`:""}</div>
+          <div class="team"><span class="nm">${teamName(x.a, x.am)}</span>${x.acf?`<span class="conf">${esc(x.acf)}</span>`:""}${showScore(x)?`<span class="sc">${esc(x.as)}</span>`:""}${x.ap?goalieLine(x.ap, x.agf, x.lg):""}</div>
           ${odds(x.ao, x.aco, x, x.aop, x.acl)}
           <div class="rot">${x.hr ?? "—"}</div>
-          <div class="team"><span class="nm">@ ${teamName(x.h, x.hm)}</span>${x.hcf?`<span class="conf">${esc(x.hcf)}</span>`:""}${showScore(x)?`<span class="sc">${esc(x.hs)}</span>`:""}${x.hp?`<span class="p${x.lg==="NHL"?" own":""}">${esc(x.hp)}</span>`:""}</div>
+          <div class="team"><span class="nm">@ ${teamName(x.h, x.hm)}</span>${x.hcf?`<span class="conf">${esc(x.hcf)}</span>`:""}${showScore(x)?`<span class="sc">${esc(x.hs)}</span>`:""}${x.hp?goalieLine(x.hp, x.hgf, x.lg):""}</div>
           ${odds(x.ho, x.hco, x, x.hop, x.hcl)}
         </div>
         <div class="note"><span class="nl">${x.note?esc(x.note)+" · ":""}<a class="gd" href="${esc(x.day_url||x.url)}" target="_blank" rel="noopener">Game details</a>${x.url?` · <a class="gd" href="${esc(x.url)}" target="_blank" rel="noopener">Matchup</a>`:""}${propCount(x)?` · <button class="pb" data-g="${x._i}" aria-expanded="${openProps.has(x._i)}">Props (${propCount(x)})</button>`:""}</span>${x.cp?`<button class="cp" data-cp="${esc(x.cp)}" title="Copy">${COPY_ICON}<span>${esc(x.cp)}</span></button>`:""}</div>
